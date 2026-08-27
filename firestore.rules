@@ -43,5 +43,11 @@ service cloud.firestore {
     match /users/{userId}/favorites/{routeId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
+
+    // Integración con Garmin/Intervals.icu: tu propia clave, privada,
+    // dentro de tu propia carpeta — solo tú puedes leerla o escribirla.
+    match /users/{userId}/integrations/{doc} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
   }
 }
