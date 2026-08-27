@@ -1,4 +1,4 @@
-const CACHE = 'trams-v1';
+const CACHE = 'trams-v2';
 
 const ASSETS = [
   './',
@@ -7,6 +7,7 @@ const ASSETS = [
   './css/style.css',
   './js/stats.js',
   './js/parsers.js',
+  './js/recorder.js',
   './js/db.js',
   './js/app.js',
   './js/firebase-config.js'
