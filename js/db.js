@@ -63,4 +63,101 @@ async function deleteRoute(id) {
   await deleteDoc(doc(db, 'routes', id));
 }
 
-export const DB = { saveRoute, getRoute, listRecentRoutes, listRoutes, deleteRoute };
+// ============================================================
+// FOTOS de una ruta — subcolección aparte (como en RunTrack), para no
+// arriesgarnos a superar el límite de tamaño del documento de la ruta.
+// ============================================================
+
+function photosCol(routeId) {
+  return collection(db, 'routes', routeId, 'photos');
+}
+
+async function addPhoto(routeId, dataUrl) {
+  const ref = doc(photosCol(routeId));
+  const payload = {
+    id: ref.id, dataUrl,
+    uploadedBy: uid(),
+    uploadedByName: (auth.currentUser && auth.currentUser.displayName) || 'Alguien',
+    createdAt: serverTimestamp()
+  };
+  await setDoc(ref, payload);
+  return payload;
+}
+
+async function listPhotos(routeId) {
+  const snap = await getDocs(photosCol(routeId));
+  return snap.docs.map(d => d.data());
+}
+
+async function deletePhoto(routeId, photoId) {
+  await deleteDoc(doc(photosCol(routeId), photoId));
+}
+
+// ============================================================
+// COMENTARIOS — cualquiera con cuenta en Trams puede comentar
+// cualquier ruta (es una comunidad compartida, no hay concepto de
+// "amigos" aquí); solo el autor puede borrar el suyo.
+// ============================================================
+
+function commentsCol(routeId) {
+  return collection(db, 'routes', routeId, 'comments');
+}
+
+async function addComment(routeId, text) {
+  const trimmed = (text || '').trim();
+  if (!trimmed) throw new Error('El comentario está vacío.');
+  const ref = doc(commentsCol(routeId));
+  const payload = {
+    id: ref.id, uid: uid(),
+    userName: (auth.currentUser && auth.currentUser.displayName) || 'Alguien',
+    text: trimmed.slice(0, 500),
+    createdAt: serverTimestamp()
+  };
+  await setDoc(ref, payload);
+  return payload;
+}
+
+async function listComments(routeId) {
+  const q = query(commentsCol(routeId), orderBy('createdAt', 'asc'));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => d.data());
+}
+
+async function deleteComment(routeId, commentId) {
+  await deleteDoc(doc(commentsCol(routeId), commentId));
+}
+
+// ============================================================
+// FAVORITOS — lista personal, privada, dentro de tu propia carpeta.
+// ============================================================
+
+function favoritesCol() {
+  return collection(db, 'users', uid(), 'favorites');
+}
+
+async function addFavorite(route) {
+  await setDoc(doc(favoritesCol(), route.id), {
+    routeId: route.id, routeName: route.name, addedAt: serverTimestamp()
+  });
+}
+
+async function removeFavorite(routeId) {
+  await deleteDoc(doc(favoritesCol(), routeId));
+}
+
+async function isFavorite(routeId) {
+  const snap = await getDoc(doc(favoritesCol(), routeId));
+  return snap.exists();
+}
+
+async function listFavoriteIds() {
+  const snap = await getDocs(favoritesCol());
+  return snap.docs.map(d => d.id);
+}
+
+export const DB = {
+  saveRoute, getRoute, listRecentRoutes, listRoutes, deleteRoute,
+  addPhoto, listPhotos, deletePhoto,
+  addComment, listComments, deleteComment,
+  addFavorite, removeFavorite, isFavorite, listFavoriteIds
+};
