@@ -43,6 +43,7 @@ async function router() {
 
   if (key === '/' || key === '') renderList();
   else if (key === '/upload') renderUpload();
+  else if (key === '/record') renderRecord();
   else if (key === '/route') renderRouteDetail(param);
   else renderList();
 }
@@ -140,8 +141,8 @@ async function handleFile(file) {
   }
 }
 
-function showPreview(summary, suggestedName, source) {
-  const status = document.getElementById('uploadStatus');
+function showPreview(summary, suggestedName, source, containerId = 'uploadStatus') {
+  const status = document.getElementById(containerId);
 
   status.innerHTML = h`
     <div class="stat-grid">
@@ -207,6 +208,122 @@ function showPreview(summary, suggestedName, source) {
 }
 
 // ============================================================
+// GRABAR EN DIRECTO CON EL GPS DEL MÓVIL
+// ============================================================
+
+function renderRecord() {
+  const $v = document.getElementById('view');
+  $v.innerHTML = `
+    <div class="topbar"><a href="#/" class="icon-btn">‹</a><h2>Grabar en directo</h2></div>
+
+    <div class="card" style="text-align:center; padding:28px 16px;">
+      <div id="recDistance" style="font-size:38px; font-weight:800; line-height:1;">0.00 km</div>
+      <div style="margin-top:14px;">
+        <div id="recDuration" style="font-size:22px; font-weight:800;">0:00</div>
+        <span style="font-size:11px; color:#888;">TIEMPO</span>
+      </div>
+    </div>
+
+    <div class="map-box" id="recordMap"></div>
+
+    <div id="recControls" style="display:flex; gap:10px; margin-top:14px;"></div>
+
+    <p style="font-size:11px; color:#888; margin-top:12px; text-align:center; line-height:1.5;">
+      Mantén Trams en primer plano y la pantalla encendida durante toda la ruta —
+      si bloqueas el móvil o cambias de app, el GPS puede pausarse (limitación del navegador).
+    </p>
+
+    <div id="recSaveArea" style="margin-top:16px;"></div>
+  `;
+
+  let map = null, line = null;
+  if (typeof L !== 'undefined') {
+    map = L.map('recordMap', { attributionControl: false, zoomControl: false });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(map);
+    map.setView([41.39, 2.16], 13);
+  }
+
+  let uiTimer = null;
+
+  function fmtLiveDuration(sec) {
+    sec = Math.floor(sec);
+    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+    return (h > 0 ? h + ':' : '') + String(m).padStart(h > 0 ? 2 : 1, '0') + ':' + String(s).padStart(2, '0');
+  }
+
+  function refreshUI() {
+    const stats = Recorder.liveStats();
+    document.getElementById('recDistance').textContent = (stats.distance / 1000).toFixed(2) + ' km';
+    document.getElementById('recDuration').textContent = fmtLiveDuration(stats.elapsedSec);
+
+    if (map && stats.points.length > 1) {
+      const latlngs = stats.points.map(p => [p.lat, p.lon]);
+      if (line) line.setLatLngs(latlngs);
+      else line = L.polyline(latlngs, { color: '#1F6F4A', weight: 4 }).addTo(map);
+      map.fitBounds(line.getBounds(), { padding: [24, 24] });
+    } else if (map && stats.points.length === 1) {
+      map.setView([stats.points[0].lat, stats.points[0].lon], 16);
+    }
+  }
+
+  async function handleStop() {
+    const stats = Recorder.liveStats();
+    if (stats.points.length < 2 || stats.distance < 50) {
+      if (confirm('Apenas hay recorrido grabado. ¿Descartar esta grabación?')) {
+        Recorder.discard();
+        clearInterval(uiTimer);
+        navigate('#/');
+      }
+      return;
+    }
+
+    const points = Recorder.stop();
+    clearInterval(uiTimer);
+
+    const summary = Stats.computeSummary(points);
+    if (!summary) { toast('No se pudo procesar la grabación'); return; }
+
+    document.getElementById('recControls').innerHTML = '';
+    showPreview(summary, null, 'recorded', 'recSaveArea');
+  }
+
+  function renderControls() {
+    const controls = document.getElementById('recControls');
+    const state = Recorder.state;
+
+    if (state === 'idle' || state === 'stopped') {
+      controls.innerHTML = `<button class="btn" id="btnRecStart" style="width:100%;">▶ Empezar a grabar</button>`;
+      document.getElementById('btnRecStart').onclick = async () => {
+        try {
+          await Recorder.start();
+          renderControls();
+          if (!uiTimer) uiTimer = setInterval(refreshUI, 1000);
+        } catch (e) {
+          toast(e.message || 'No se pudo acceder a la ubicación. Revisa los permisos de este sitio.');
+        }
+      };
+    } else if (state === 'recording') {
+      controls.innerHTML = `
+        <button class="btn secondary" id="btnRecPause" style="flex:1;">⏸ Pausar</button>
+        <button class="btn" id="btnRecStop" style="flex:1; background:#c0392b;">⏹ Finalizar</button>
+      `;
+      document.getElementById('btnRecPause').onclick = () => { Recorder.pause(); renderControls(); };
+      document.getElementById('btnRecStop').onclick = handleStop;
+    } else if (state === 'paused') {
+      controls.innerHTML = `
+        <button class="btn" id="btnRecResume" style="flex:1;">▶ Reanudar</button>
+        <button class="btn secondary" id="btnRecStop" style="flex:1;">⏹ Finalizar</button>
+      `;
+      document.getElementById('btnRecResume').onclick = async () => { await Recorder.resume(); renderControls(); };
+      document.getElementById('btnRecStop').onclick = handleStop;
+    }
+  }
+
+  renderControls();
+  refreshUI();
+}
+
+// ============================================================
 // ============================================================
 // EXPLORAR RUTAS — buscador, filtro por tipo, mapa en miniatura
 // ============================================================
@@ -226,7 +343,8 @@ async function renderList() {
       <h2>🥾 Trams</h2>
       <button class="icon-btn" id="btnLogout">⏻</button>
     </div>
-    <a href="#/upload" class="btn" style="display:block; text-align:center; margin-bottom:16px;">+ Subir una ruta</a>
+    <a href="#/upload" class="btn" style="display:block; text-align:center; margin-bottom:10px;">+ Subir una ruta</a>
+    <a href="#/record" class="btn secondary" style="display:block; text-align:center; margin-bottom:16px;">🔴 Grabar en directo</a>
 
     <input id="searchInput" placeholder="Buscar por nombre…" style="margin-bottom:10px;">
 
