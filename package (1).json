@@ -1,0 +1,9 @@
+{
+  "name": "trams",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Trams — dependencias del backend serverless (api/). El resto de la app es JS plano sin build.",
+  "dependencies": {
+    "firebase-admin": "^12.6.0"
+  }
+}
