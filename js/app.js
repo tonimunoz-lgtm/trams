@@ -362,7 +362,7 @@ async function renderList() {
 
 function renderFilterChips() {
   const chipsEl = document.getElementById('filterChips');
-  const options = [['all', 'Todos'], ...Object.entries(ACTIVITY_LABELS)];
+  const options = [['all', 'Todos'], ['favorites', '★ Favoritos'], ...Object.entries(ACTIVITY_LABELS)];
   chipsEl.innerHTML = options.map(([key, label]) => h`
     <button class="chip ${EXPLORE_FILTER === key ? 'chip-active' : ''}" data-filter="${key}">${label}</button>
   `).join('');
@@ -380,7 +380,18 @@ async function loadAndRenderRoutes() {
   const list = document.getElementById('routesList');
   list.innerHTML = '<div class="spinner"></div>';
   try {
-    ALL_ROUTES_CACHE = await DB.listRoutes({ activityType: EXPLORE_FILTER, count: 100 });
+    if (EXPLORE_FILTER === 'favorites') {
+      const favIds = await DB.listFavoriteIds();
+      if (!favIds.length) {
+        ALL_ROUTES_CACHE = [];
+      } else {
+        const all = await DB.listRoutes({ activityType: 'all', count: 200 });
+        const favSet = new Set(favIds);
+        ALL_ROUTES_CACHE = all.filter(r => favSet.has(r.id));
+      }
+    } else {
+      ALL_ROUTES_CACHE = await DB.listRoutes({ activityType: EXPLORE_FILTER, count: 100 });
+    }
     renderFilteredRoutes();
   } catch (e) {
     console.error(e);
@@ -446,7 +457,8 @@ async function renderRouteDetail(id) {
   $v.innerHTML = h`
     <div class="topbar">
       <a href="#/" class="icon-btn">‹</a>
-      <h2>${route.name}</h2>
+      <h2 style="flex:1;">${route.name}</h2>
+      <button class="icon-btn" id="btnFavorite">☆</button>
     </div>
 
     <div class="map-box" id="detailMap"></div>
@@ -469,6 +481,22 @@ async function renderRouteDetail(id) {
     <div class="card">
       <canvas id="elevChart" height="140"></canvas>
     </div>
+
+    <div class="section-title">Fotos</div>
+    <div class="card">
+      <div id="photosGallery" style="display:flex; gap:8px; overflow-x:auto; padding-bottom:4px;"></div>
+      <input type="file" id="photoInput" accept="image/*" style="display:none;">
+      <button class="btn secondary" id="btnAddPhoto" style="margin-top:10px; width:100%;">📷 Añadir foto</button>
+    </div>
+
+    <div class="section-title">Comentarios</div>
+    <div class="card">
+      <div id="commentsList"></div>
+      <div style="display:flex; gap:8px; margin-top:10px;">
+        <input id="commentInput" placeholder="Escribe un comentario…" maxlength="500" style="flex:1; margin-bottom:0;">
+        <button class="btn" id="btnPostComment" style="width:auto;">Enviar</button>
+      </div>
+    </div>
   `;
 
   if (typeof L !== 'undefined' && route.points && route.points.length > 1) {
@@ -482,6 +510,179 @@ async function renderRouteDetail(id) {
   drawElevationChart(route.points);
 
   document.getElementById('btnDownloadGPX').onclick = () => downloadGPX(route);
+
+  setupFavoriteButton(route);
+  setupPhotos(route);
+  setupComments(route);
+}
+
+function setupFavoriteButton(route) {
+  const btn = document.getElementById('btnFavorite');
+
+  DB.isFavorite(route.id).then(fav => {
+    btn.textContent = fav ? '★' : '☆';
+    btn.dataset.fav = fav ? '1' : '0';
+  });
+
+  btn.onclick = async () => {
+    btn.disabled = true;
+    try {
+      if (btn.dataset.fav === '1') {
+        await DB.removeFavorite(route.id);
+        btn.textContent = '☆'; btn.dataset.fav = '0';
+      } else {
+        await DB.addFavorite(route);
+        btn.textContent = '★'; btn.dataset.fav = '1';
+      }
+    } catch (e) {
+      toast('No se pudo actualizar favoritos');
+    } finally {
+      btn.disabled = false;
+    }
+  };
+}
+
+// Redimensiona una foto a un tamaño razonable antes de guardarla como
+// texto base64 en Firestore — sin esto, una foto de móvil sin comprimir
+// se pasaría de largo del límite de tamaño del documento.
+function resizeImageKeepAspect(file, maxDim = 1000, quality = 0.78) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = () => { img.src = reader.result; };
+    reader.onerror = reject;
+    img.onload = () => {
+      let w = img.width, h = img.height;
+      if (w > h && w > maxDim) { h = Math.round(h * (maxDim / w)); w = maxDim; }
+      else if (h >= w && h > maxDim) { w = Math.round(w * (maxDim / h)); h = maxDim; }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function setupPhotos(route) {
+  const gallery = document.getElementById('photosGallery');
+  const input = document.getElementById('photoInput');
+  const btnAdd = document.getElementById('btnAddPhoto');
+
+  let photos = await DB.listPhotos(route.id).catch(() => []);
+
+  function renderGallery() {
+    if (!photos.length) {
+      gallery.innerHTML = '<p style="color:#888; font-size:13px; margin:0;">Todavía no hay fotos.</p>';
+      return;
+    }
+    gallery.innerHTML = photos.map((p, i) => `
+      <img src="${p.dataUrl}" data-idx="${i}" style="width:96px; height:96px; object-fit:cover; border-radius:10px; flex-shrink:0; cursor:pointer;">
+    `).join('');
+    gallery.querySelectorAll('img').forEach(imgEl => {
+      imgEl.onclick = () => openPhotoLightbox(photos[+imgEl.dataset.idx], route.id, photos, renderGallery);
+    });
+  }
+  renderGallery();
+
+  btnAdd.onclick = () => input.click();
+  input.onchange = async () => {
+    if (!input.files.length) return;
+    btnAdd.textContent = 'Subiendo…';
+    try {
+      const dataUrl = await resizeImageKeepAspect(input.files[0]);
+      const saved = await DB.addPhoto(route.id, dataUrl);
+      photos.push(saved);
+      renderGallery();
+      toast('Foto añadida');
+    } catch (e) {
+      console.error(e);
+      toast('No se pudo subir la foto');
+    } finally {
+      btnAdd.textContent = '📷 Añadir foto';
+      input.value = '';
+    }
+  };
+}
+
+function openPhotoLightbox(photo, routeId, photos, onChange) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `
+    position:fixed; inset:0; background:rgba(0,0,0,.92); z-index:2000;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+  `;
+  overlay.innerHTML = `
+    <img src="${photo.dataUrl}" style="max-width:94%; max-height:78%; border-radius:8px; object-fit:contain;">
+    <div style="display:flex; gap:16px; margin-top:18px;">
+      <button id="lightboxDelete" class="btn secondary">🗑 Borrar</button>
+      <button id="lightboxClose" class="btn">Cerrar</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  overlay.querySelector('#lightboxClose').onclick = () => overlay.remove();
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+
+  overlay.querySelector('#lightboxDelete').onclick = async () => {
+    if (!confirm('¿Borrar esta foto?')) return;
+    try {
+      await DB.deletePhoto(routeId, photo.id);
+      const idx = photos.findIndex(p => p.id === photo.id);
+      if (idx >= 0) photos.splice(idx, 1);
+      onChange();
+      overlay.remove();
+      toast('Foto borrada');
+    } catch (e) {
+      toast('No se pudo borrar (solo el autor puede)');
+    }
+  };
+}
+
+async function setupComments(route) {
+  const list = document.getElementById('commentsList');
+  const input = document.getElementById('commentInput');
+  const btn = document.getElementById('btnPostComment');
+
+  async function refresh() {
+    const comments = await DB.listComments(route.id).catch(() => []);
+    if (!comments.length) {
+      list.innerHTML = '<p style="font-size:12px; color:#888;">Sin comentarios todavía.</p>';
+      return;
+    }
+    list.innerHTML = comments.map(c => h`
+      <div style="padding:6px 0;">
+        <b style="font-size:12px;">${c.userName}</b>
+        <span style="font-size:13px;"> ${c.text}</span>
+        ${c.uid === (auth.currentUser && auth.currentUser.uid)
+          ? `<button data-del="${c.id}" style="background:none; border:none; color:#888; font-size:11px; cursor:pointer; margin-left:6px;">borrar</button>`
+          : ''}
+      </div>
+    `).join('');
+
+    list.querySelectorAll('[data-del]').forEach(b => {
+      b.onclick = async () => {
+        await DB.deleteComment(route.id, b.dataset.del).catch(() => {});
+        refresh();
+      };
+    });
+  }
+
+  btn.onclick = async () => {
+    if (!input.value.trim()) return;
+    btn.disabled = true;
+    try {
+      await DB.addComment(route.id, input.value);
+      input.value = '';
+      refresh();
+    } catch (e) {
+      toast(e.message || 'No se pudo enviar el comentario');
+    } finally {
+      btn.disabled = false;
+    }
+  };
+
+  refresh();
 }
 
 function drawElevationChart(points) {
