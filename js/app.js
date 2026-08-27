@@ -44,6 +44,7 @@ async function router() {
   if (key === '/' || key === '') renderList();
   else if (key === '/upload') renderUpload();
   else if (key === '/record') renderRecord();
+  else if (key === '/connect') renderConnect();
   else if (key === '/route') renderRouteDetail(param);
   else renderList();
 }
@@ -341,6 +342,8 @@ async function renderList() {
   $v.innerHTML = `
     <div class="topbar">
       <h2>🥾 Trams</h2>
+      <button class="icon-btn" id="btnQuickSync" title="Actualizar desde Garmin">↻</button>
+      <a href="#/connect" class="icon-btn" title="Conectar mi reloj">⌚</a>
       <button class="icon-btn" id="btnLogout">⏻</button>
     </div>
     <a href="#/upload" class="btn" style="display:block; text-align:center; margin-bottom:10px;">+ Subir una ruta</a>
@@ -355,9 +358,102 @@ async function renderList() {
 
   document.getElementById('btnLogout').onclick = () => signOut(auth);
   document.getElementById('searchInput').oninput = renderFilteredRoutes;
+  setupQuickSync();
 
   renderFilterChips();
   await loadAndRenderRoutes();
+}
+
+function setupQuickSync() {
+  const btn = document.getElementById('btnQuickSync');
+  if (!btn) return;
+
+  btn.onclick = async () => {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = '…';
+
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const resp = await fetch('/api/trigger-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+        body: JSON.stringify({ days: 1 })
+      });
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        throw new Error(data.error || `Error ${resp.status}`);
+      }
+      toast('Sincronización lanzada — tardará unos 20-40s');
+    } catch (e) {
+      console.error(e);
+      toast(e.message || 'No se pudo lanzar la sincronización');
+    } finally {
+      btn.textContent = original;
+      setTimeout(() => { btn.disabled = false; }, 8000);
+    }
+  };
+}
+
+// ============================================================
+// CONECTAR MI GARMIN (vía Intervals.icu)
+// ============================================================
+
+async function renderConnect() {
+  const $v = document.getElementById('view');
+  $v.innerHTML = `
+    <div class="topbar"><a href="#/" class="icon-btn">‹</a><h2>Conectar mi Garmin</h2></div>
+    <div class="card" id="garminCard"><div class="spinner"></div></div>
+  `;
+
+  const card = document.getElementById('garminCard');
+  const existing = await DB.getGarminIntegration().catch(() => null);
+
+  card.innerHTML = h`
+    <p style="font-size:12px; color:#888; margin-bottom:10px;">
+      Consigue tu clave personal en <b>intervals.icu → Ajustes → Developer Settings → API Key</b>, y pégala aquí.
+      Es solo tuya — nadie más puede verla ni usarla. Tus actividades de correr, andar o bici se importarán
+      automáticamente como rutas tuyas en Trams.
+    </p>
+
+    <label>Tu clave de Intervals.icu</label>
+    <input id="garminApiKey" type="password" placeholder="${existing ? '•••••••••••••• (ya guardada)' : 'Pega tu clave aquí'}">
+
+    <label>Tu Athlete ID (déjalo en "0" si es tu propia cuenta)</label>
+    <input id="garminAthleteId" value="${existing ? existing.intervalsAthleteId : '0'}">
+
+    <div style="display:flex; gap:8px; margin-top:6px;">
+      <button class="btn" id="btnSaveGarmin" style="flex:1;">${existing ? 'Actualizar clave' : 'Guardar'}</button>
+      ${existing ? '<button class="btn secondary" id="btnRemoveGarmin">Desconectar</button>' : ''}
+    </div>
+    <p id="garminMsg" style="font-size:12px; margin-top:8px;"></p>
+  `;
+
+  document.getElementById('btnSaveGarmin').onclick = async () => {
+    const key = document.getElementById('garminApiKey').value.trim();
+    const athleteId = document.getElementById('garminAthleteId').value.trim() || '0';
+    const msg = document.getElementById('garminMsg');
+    if (!key) { msg.style.color = '#c0392b'; msg.textContent = 'Pega tu clave primero.'; return; }
+    try {
+      await DB.saveGarminIntegration({ intervalsApiKey: key, intervalsAthleteId: athleteId });
+      toast('Garmin conectado');
+      renderConnect();
+    } catch (e) {
+      msg.style.color = '#c0392b';
+      msg.textContent = e.message || 'No se pudo guardar.';
+    }
+  };
+
+  const btnRemove = document.getElementById('btnRemoveGarmin');
+  if (btnRemove) {
+    btnRemove.onclick = async () => {
+      if (!confirm('¿Desconectar Garmin?')) return;
+      await DB.deleteGarminIntegration();
+      toast('Desconectado');
+      renderConnect();
+    };
+  }
 }
 
 function renderFilterChips() {
