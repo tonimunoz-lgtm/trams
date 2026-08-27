@@ -15,12 +15,12 @@ import { getAuth } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-aut
 import { getFirestore } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 const firebaseConfig = {
-  apiKey: "PON_AQUI_TU_API_KEY",
-  authDomain: "PON_AQUI_TU_PROYECTO.firebaseapp.com",
-  projectId: "PON_AQUI_TU_PROYECTO",
-  storageBucket: "PON_AQUI_TU_PROYECTO.appspot.com",
-  messagingSenderId: "PON_AQUI_TU_SENDER_ID",
-  appId: "PON_AQUI_TU_APP_ID"
+  apiKey: "AIzaSyBRfcukKqgnr69Fs-AiYzAm7Ehv7H9QnxI",
+  authDomain: "nadalquiz2025.firebaseapp.com",
+  projectId: "nadalquiz2025",
+  storageBucket: "nadalquiz2025.firebasestorage.app",
+  messagingSenderId: "563642099266",
+  appId: "1:563642099266:web:a959c08efe3ea0709dafdb"
 };
 
 const app = initializeApp(firebaseConfig);
