@@ -155,9 +155,37 @@ async function listFavoriteIds() {
   return snap.docs.map(d => d.id);
 }
 
+// ============================================================
+// INTEGRACIÓN GARMIN/INTERVALS.ICU — cada usuario guarda su propia clave,
+// dentro de su carpeta privada.
+// ============================================================
+
+function integrationsCol(targetUid) {
+  return collection(db, 'users', targetUid, 'integrations');
+}
+
+async function saveGarminIntegration({ intervalsApiKey, intervalsAthleteId }) {
+  await setDoc(doc(integrationsCol(uid()), 'garmin'), {
+    source: 'garmin',
+    intervalsApiKey,
+    intervalsAthleteId: intervalsAthleteId || '0',
+    updatedAt: serverTimestamp()
+  });
+}
+
+async function getGarminIntegration() {
+  const snap = await getDoc(doc(integrationsCol(uid()), 'garmin'));
+  return snap.exists() ? snap.data() : null;
+}
+
+async function deleteGarminIntegration() {
+  await deleteDoc(doc(integrationsCol(uid()), 'garmin'));
+}
+
 export const DB = {
   saveRoute, getRoute, listRecentRoutes, listRoutes, deleteRoute,
   addPhoto, listPhotos, deletePhoto,
   addComment, listComments, deleteComment,
-  addFavorite, removeFavorite, isFavorite, listFavoriteIds
+  addFavorite, removeFavorite, isFavorite, listFavoriteIds,
+  saveGarminIntegration, getGarminIntegration, deleteGarminIntegration
 };
