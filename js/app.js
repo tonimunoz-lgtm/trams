@@ -207,8 +207,17 @@ function showPreview(summary, suggestedName, source) {
 }
 
 // ============================================================
-// LISTA (básica — la exploración de verdad llega en el bloque 2)
 // ============================================================
+// EXPLORAR RUTAS — buscador, filtro por tipo, mapa en miniatura
+// ============================================================
+
+const ACTIVITY_LABELS = {
+  hiking: '🥾 Senderismo', running: '🏃 Correr', cycling: '🚴 Bici',
+  mtb: '🚵 BTT', other: '📍 Otro'
+};
+
+let EXPLORE_FILTER = 'all';
+let ALL_ROUTES_CACHE = [];
 
 async function renderList() {
   const $v = document.getElementById('view');
@@ -218,37 +227,92 @@ async function renderList() {
       <button class="icon-btn" id="btnLogout">⏻</button>
     </div>
     <a href="#/upload" class="btn" style="display:block; text-align:center; margin-bottom:16px;">+ Subir una ruta</a>
+
+    <input id="searchInput" placeholder="Buscar por nombre…" style="margin-bottom:10px;">
+
+    <div id="filterChips" class="chips-row"></div>
+
     <div id="routesList"><div class="spinner"></div></div>
   `;
 
   document.getElementById('btnLogout').onclick = () => signOut(auth);
+  document.getElementById('searchInput').oninput = renderFilteredRoutes;
 
+  renderFilterChips();
+  await loadAndRenderRoutes();
+}
+
+function renderFilterChips() {
+  const chipsEl = document.getElementById('filterChips');
+  const options = [['all', 'Todos'], ...Object.entries(ACTIVITY_LABELS)];
+  chipsEl.innerHTML = options.map(([key, label]) => h`
+    <button class="chip ${EXPLORE_FILTER === key ? 'chip-active' : ''}" data-filter="${key}">${label}</button>
+  `).join('');
+
+  chipsEl.querySelectorAll('[data-filter]').forEach(btn => {
+    btn.onclick = async () => {
+      EXPLORE_FILTER = btn.dataset.filter;
+      renderFilterChips();
+      await loadAndRenderRoutes();
+    };
+  });
+}
+
+async function loadAndRenderRoutes() {
   const list = document.getElementById('routesList');
+  list.innerHTML = '<div class="spinner"></div>';
   try {
-    const routes = await DB.listRecentRoutes(30);
-    if (!routes.length) {
-      list.innerHTML = `<p style="color:#888; text-align:center;">Todavía no hay rutas — ¡sé el primero!</p>`;
-      return;
-    }
-    list.innerHTML = routes.map(r => h`
-      <a href="#/route/${r.id}" class="card route-card">
-        <b>${r.name}</b>
-        <p style="font-size:12px; color:#888;">Subida por ${r.createdByName}</p>
-        <div class="stat-grid cols-3">
-          <div class="stat"><b>${Stats.fmtDistance(r.distance)}</b><span>Distancia</span></div>
-          <div class="stat"><b>+${Math.round(r.elevGain)} m</b><span>Desnivel</span></div>
-          <div class="stat"><b>${r.duration ? Stats.fmtDuration(r.duration) : '--'}</b><span>Duración</span></div>
-        </div>
-      </a>
-    `).join('');
+    ALL_ROUTES_CACHE = await DB.listRoutes({ activityType: EXPLORE_FILTER, count: 100 });
+    renderFilteredRoutes();
   } catch (e) {
     console.error(e);
     list.innerHTML = `<p style="color:#c0392b;">No se pudieron cargar las rutas.</p>`;
   }
 }
 
+function renderFilteredRoutes() {
+  const list = document.getElementById('routesList');
+  const search = (document.getElementById('searchInput').value || '').toLowerCase().trim();
+  const routes = search
+    ? ALL_ROUTES_CACHE.filter(r => (r.name || '').toLowerCase().includes(search))
+    : ALL_ROUTES_CACHE;
+
+  if (!routes.length) {
+    list.innerHTML = `<p style="color:#888; text-align:center;">${search ? 'Ninguna ruta coincide.' : 'Todavía no hay rutas — ¡sé el primero!'}</p>`;
+    return;
+  }
+
+  list.innerHTML = routes.map(r => h`
+    <a href="#/route/${r.id}" class="card route-card">
+      <div class="route-map" id="mini-${r.id}"></div>
+      <b>${r.name}</b>
+      <p style="font-size:12px; color:#888;">${ACTIVITY_LABELS[r.activityType] || ''} · Subida por ${r.createdByName}</p>
+      <div class="stat-grid cols-3">
+        <div class="stat"><b>${Stats.fmtDistance(r.distance)}</b><span>Distancia</span></div>
+        <div class="stat"><b>+${Math.round(r.elevGain)} m</b><span>Desnivel</span></div>
+        <div class="stat"><b>${r.duration ? Stats.fmtDuration(r.duration) : '--'}</b><span>Duración</span></div>
+      </div>
+    </a>
+  `).join('');
+
+  routes.forEach(r => drawMiniMap(r));
+}
+
+function drawMiniMap(route) {
+  const el = document.getElementById(`mini-${route.id}`);
+  if (!el || typeof L === 'undefined' || !route.points || route.points.length < 2) return;
+  const map = L.map(el, {
+    attributionControl: false, zoomControl: false,
+    dragging: false, scrollWheelZoom: false, touchZoom: false, doubleClickZoom: false
+  });
+  const latlngs = route.points.map(p => [p.lat, p.lon]);
+  const line = L.polyline(latlngs, { color: '#1F6F4A', weight: 3 }).addTo(map);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(map);
+  map.fitBounds(line.getBounds(), { padding: [10, 10] });
+}
+
 // ============================================================
-// FICHA DE UNA RUTA (básica)
+// FICHA DE UNA RUTA — mapa grande, perfil de elevación, descarga GPX
 // ============================================================
 
 async function renderRouteDetail(id) {
@@ -267,8 +331,10 @@ async function renderRouteDetail(id) {
       <h2>${route.name}</h2>
     </div>
 
+    <div class="map-box" id="detailMap"></div>
+
     <div class="card">
-      <p style="font-size:12px; color:#888;">Subida por ${route.createdByName}</p>
+      <p style="font-size:12px; color:#888;">${ACTIVITY_LABELS[route.activityType] || ''} · Subida por ${route.createdByName}</p>
       ${route.description ? `<p>${route.description}</p>` : ''}
 
       <div class="stat-grid">
@@ -277,8 +343,83 @@ async function renderRouteDetail(id) {
         <div class="stat"><b>-${Math.round(route.elevLoss)} m</b><span>Desnivel -</span></div>
         <div class="stat"><b>${route.duration ? Stats.fmtDuration(route.duration) : '--'}</b><span>Duración</span></div>
       </div>
+
+      <button class="btn secondary" id="btnDownloadGPX" style="margin-top:12px; width:100%;">⬇ Descargar GPX</button>
+    </div>
+
+    <div class="section-title">Perfil de elevación</div>
+    <div class="card">
+      <canvas id="elevChart" height="140"></canvas>
     </div>
   `;
+
+  if (typeof L !== 'undefined' && route.points && route.points.length > 1) {
+    const map = L.map('detailMap', { attributionControl: false });
+    const latlngs = route.points.map(p => [p.lat, p.lon]);
+    const line = L.polyline(latlngs, { color: '#1F6F4A', weight: 4 }).addTo(map);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(map);
+    map.fitBounds(line.getBounds(), { padding: [20, 20] });
+  }
+
+  drawElevationChart(route.points);
+
+  document.getElementById('btnDownloadGPX').onclick = () => downloadGPX(route);
+}
+
+function drawElevationChart(points) {
+  const el = document.getElementById('elevChart');
+  if (!el || typeof Chart === 'undefined' || !points || points.length < 2) return;
+
+  const cum = Stats.cumulativeDistances(points);
+  const labels = cum.map(d => (d / 1000).toFixed(1));
+  const elevs = points.map(p => p.ele);
+
+  new Chart(el, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data: elevs, borderColor: '#1F6F4A', backgroundColor: 'rgba(31,111,74,0.15)',
+        fill: true, pointRadius: 0, borderWidth: 2, tension: 0.2
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { title: { display: true, text: 'km' }, ticks: { maxTicksLimit: 6 } },
+        y: { title: { display: true, text: 'Altitud (m)' } }
+      }
+    }
+  });
+}
+
+function downloadGPX(route) {
+  const points = (route.points || []).map(p =>
+    `<trkpt lat="${p.lat}" lon="${p.lon}">${p.ele != null ? `<ele>${p.ele}</ele>` : ''}</trkpt>`
+  ).join('\n    ');
+
+  const safeName = (route.name || 'ruta').replace(/[<>&]/g, '');
+
+  const gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Trams" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>${safeName}</name>
+    <trkseg>
+    ${points}
+    </trkseg>
+  </trk>
+</gpx>`;
+
+  const blob = new Blob([gpx], { type: 'application/gpx+xml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${safeName.replace(/[^a-z0-9]/gi, '_') || 'ruta'}.gpx`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 // ============================================================
