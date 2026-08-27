@@ -1,0 +1,21 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Cualquier usuario con sesión iniciada en Trams puede LEER cualquier
+    // ruta — es la base del proyecto, una biblioteca compartida entre
+    // todos los que usáis la app, no una carpeta privada por persona.
+    //
+    // Para escribir: solo puedes crear una ruta a tu propio nombre
+    // (createdBy = tu uid), y solo tú puedes editar o borrar las rutas
+    // que subiste — nadie puede tocar ni borrar lo de otro.
+    match /routes/{routeId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null &&
+        request.resource.data.createdBy == request.auth.uid;
+      allow update, delete: if request.auth != null &&
+        resource.data.createdBy == request.auth.uid;
+    }
+  }
+}
