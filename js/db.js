@@ -7,7 +7,7 @@
 import { db, auth } from './firebase-config.js';
 import {
   collection, doc, setDoc, getDoc, getDocs, deleteDoc,
-  query, where, orderBy, limit, serverTimestamp
+  query, where, orderBy, limit, serverTimestamp, onSnapshot
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 function uid() {
@@ -51,12 +51,28 @@ async function listRecentRoutes(count = 30) {
 async function listRoutes({ activityType = null, count = 100 } = {}) {
   let q;
   if (activityType && activityType !== 'all') {
-    q = query(routesCol(), where('activityType', '==', activityType), orderBy('createdAt', 'desc'), limit(count));
+    // Sin "orderBy" aquí a propósito: combinar "where" + "orderBy" en
+    // campos distintos exige crear un índice compuesto en Firestore, y
+    // si nadie lo ha creado a mano, la consulta falla en silencio y no
+    // devuelve nada — por eso "Todos" funcionaba pero un tipo concreto
+    // no. Pedimos solo el filtro, y ordenamos por fecha aquí mismo, en
+    // el propio código, evitando depender de que exista ese índice.
+    q = query(routesCol(), where('activityType', '==', activityType), limit(count));
   } else {
     q = query(routesCol(), orderBy('createdAt', 'desc'), limit(count));
   }
   const snap = await getDocs(q);
-  return snap.docs.map(d => d.data());
+  const routes = snap.docs.map(d => d.data());
+
+  if (activityType && activityType !== 'all') {
+    routes.sort((a, b) => {
+      const ta = a.createdAt && a.createdAt.toMillis ? a.createdAt.toMillis() : 0;
+      const tb = b.createdAt && b.createdAt.toMillis ? b.createdAt.toMillis() : 0;
+      return tb - ta;
+    });
+  }
+
+  return routes;
 }
 
 async function deleteRoute(id) {
@@ -156,6 +172,49 @@ async function listFavoriteIds() {
 }
 
 // ============================================================
+// LIVE TRACKING — un enlace compartible, viable sin cuenta en Trams
+// (como compartir ubicación por WhatsApp). Cualquiera con el enlace ve
+// tu posición en el mapa; solo tú puedes actualizarla o pararla.
+// ============================================================
+
+function liveTrackingDoc(sessionId) {
+  return doc(db, 'liveTracking', sessionId);
+}
+
+async function startLiveTracking(routeName) {
+  const ref = doc(collection(db, 'liveTracking'));
+  await setDoc(ref, {
+    id: ref.id,
+    uid: uid(),
+    userName: (auth.currentUser && auth.currentUser.displayName) || 'Alguien',
+    routeName: routeName || 'una ruta',
+    active: true,
+    lat: null, lon: null,
+    startedAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
+  return ref.id;
+}
+
+async function updateLiveTracking(sessionId, { lat, lon }) {
+  await setDoc(liveTrackingDoc(sessionId), {
+    lat, lon, updatedAt: serverTimestamp()
+  }, { merge: true });
+}
+
+async function stopLiveTracking(sessionId) {
+  await setDoc(liveTrackingDoc(sessionId), {
+    active: false, updatedAt: serverTimestamp()
+  }, { merge: true });
+}
+
+function watchLiveTracking(sessionId, callback) {
+  return onSnapshot(liveTrackingDoc(sessionId), (snap) => {
+    callback(snap.exists() ? snap.data() : null);
+  });
+}
+
+// ============================================================
 // INTEGRACIÓN GARMIN/INTERVALS.ICU — cada usuario guarda su propia clave,
 // dentro de su carpeta privada.
 // ============================================================
@@ -206,5 +265,6 @@ export const DB = {
   addComment, listComments, deleteComment,
   addFavorite, removeFavorite, isFavorite, listFavoriteIds,
   saveGarminIntegration, getGarminIntegration, deleteGarminIntegration,
-  saveRideWithGPSIntegration, getRideWithGPSIntegration
+  saveRideWithGPSIntegration, getRideWithGPSIntegration,
+  startLiveTracking, updateLiveTracking, stopLiveTracking, watchLiveTracking
 };
