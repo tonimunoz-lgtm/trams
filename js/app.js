@@ -670,7 +670,14 @@ async function renderRouteDetail(id) {
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error || `Error ${resp.status}`);
-      toast('¡Enviada a RideWithGPS! Llegará a tu reloj cuando sincronice.');
+
+      if (data.routeUrl) {
+        if (confirm('¡Enviada a RideWithGPS! ¿Abrirla ahora para darle a "Enviar al reloj"?')) {
+          window.open(data.routeUrl, '_blank');
+        }
+      } else {
+        toast('¡Enviada a RideWithGPS! Búscala en tu cuenta para mandarla al reloj.');
+      }
     } catch (e) {
       console.error(e);
       alert(e.message || 'No se pudo enviar la ruta.');
