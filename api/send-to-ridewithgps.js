@@ -100,9 +100,13 @@ export default async function handler(req, res) {
   // — su propia documentación confirma que crear rutas todavía no está
   // disponible en v1, solo lectura/borrado).
   try {
-    // Igual que en la autenticación, reforzamos mandando las credenciales
-    // por varias vías a la vez (URL, cabeceras) — este endpoint parece
-    // esperar el auth_token de forma distinta al de autenticación.
+    // Diagnóstico seguro: solo la LONGITUD de las credenciales, nunca el
+    // valor — así, si algo llega vacío o cortado, se ve en los logs de
+    // Vercel sin exponer ningún secreto.
+    console.log('Enviando a RideWithGPS. Longitud apiKey:', apiKey.length, 'Longitud rwToken:', rwToken.length);
+
+    const basicAuth = Buffer.from(`${apiKey}:${rwToken}`).toString('base64');
+
     const url = `https://ridewithgps.com/routes.json?apikey=${encodeURIComponent(apiKey)}&auth_token=${encodeURIComponent(rwToken)}&version=2`;
     const rwResp = await fetch(url, {
       method: 'POST',
@@ -110,7 +114,7 @@ export default async function handler(req, res) {
         'Content-Type': 'application/json',
         'x-rwgps-api-key': apiKey,
         'x-rwgps-auth-token': rwToken,
-        'Authorization': `Bearer ${rwToken}`
+        'Authorization': `Basic ${basicAuth}`
       },
       body: JSON.stringify({
         apikey: apiKey, api_key: apiKey, auth_token: rwToken,
@@ -132,7 +136,7 @@ export default async function handler(req, res) {
     if (!rwResp.ok) {
       console.error('RideWithGPS rechazó la creación de la ruta', rwResp.status, text);
       res.status(rwResp.status || 502).json({
-        error: `RideWithGPS respondió: ${text.slice(0, 400)}`
+        error: `RideWithGPS respondió: ${text.slice(0, 400)} (diagnóstico: apiKey=${apiKey.length} car., token=${rwToken.length} car.)`
       });
       return;
     }
