@@ -495,6 +495,7 @@ async function renderConnect() {
       if (!resp.ok) throw new Error(data.error || `Error ${resp.status}`);
 
       await DB.saveRideWithGPSIntegration({ authToken: data.authToken, rwgpsUserId: data.userId });
+      if (data.debugRaw) alert('Respuesta real de RideWithGPS (para diagnóstico):\n\n' + data.debugRaw);
       toast('RideWithGPS conectado');
       renderConnect();
     } catch (e) {
@@ -601,7 +602,7 @@ async function renderRouteDetail(id) {
   $v.innerHTML = h`
     <div class="topbar">
       <a href="#/" class="icon-btn">‹</a>
-      <h2 style="flex:1;">${route.name}</h2>
+      <h2 style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;">${route.name}</h2>
       <button class="icon-btn" id="btnFavorite">☆</button>
     </div>
 
