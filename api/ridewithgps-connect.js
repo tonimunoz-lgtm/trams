@@ -74,7 +74,11 @@ export default async function handler(req, res) {
         'Content-Type': 'application/json',
         'x-rwgps-api-key': apiKey
       },
-      body: JSON.stringify({ apikey: apiKey, api_key: apiKey, email, password })
+      body: JSON.stringify({
+        apikey: apiKey, api_key: apiKey,
+        user: { email, password },
+        email, password
+      })
     });
 
     const text = await rwResp.text();
