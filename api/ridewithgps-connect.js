@@ -96,6 +96,8 @@ export default async function handler(req, res) {
       return;
     }
 
+    console.log('Respuesta completa de RideWithGPS al conectar:', text);
+
     const authToken = data.auth_token || (data.user && data.user.auth_token);
     const userId = data.user_id || (data.user && data.user.id);
     const displayName = data.user && data.user.name;
@@ -105,7 +107,10 @@ export default async function handler(req, res) {
       return;
     }
 
-    res.status(200).json({ ok: true, authToken, userId, displayName });
+    // DEBUG TEMPORAL: incluimos la respuesta real completa para verla en
+    // pantalla sin tener que rebuscar en los logs de Vercel — la quitamos
+    // en cuanto confirmemos que el campo que leemos es el correcto.
+    res.status(200).json({ ok: true, authToken: String(authToken), userId, displayName, debugRaw: text });
 
   } catch (e) {
     console.error('Error llamando a RideWithGPS', e);
