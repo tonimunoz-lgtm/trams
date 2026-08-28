@@ -53,6 +53,7 @@ async function router() {
   else if (key === '/upload') renderUpload();
   else if (key === '/record') renderRecord();
   else if (key === '/connect') renderConnect();
+  else if (key === '/import-osm') renderImportOsm();
   else if (key === '/route') renderRouteDetail(param);
   else renderList();
 }
@@ -465,7 +466,8 @@ async function renderList() {
       <button class="icon-btn" id="btnLogout">⏻</button>
     </div>
     <a href="#/upload" class="btn" style="display:block; text-align:center; margin-bottom:10px;">+ Subir una ruta</a>
-    <a href="#/record" class="btn secondary" style="display:block; text-align:center; margin-bottom:16px;">🔴 Grabar en directo</a>
+    <a href="#/record" class="btn secondary" style="display:block; text-align:center; margin-bottom:10px;">🔴 Grabar en directo</a>
+    <a href="#/import-osm" class="btn secondary" style="display:block; text-align:center; margin-bottom:16px;">🗺️ Importar de OpenStreetMap</a>
 
     <input id="searchInput" placeholder="Buscar por nombre…" style="margin-bottom:10px;">
 
@@ -517,6 +519,208 @@ function setupQuickSync() {
 // ============================================================
 // CONECTAR MI GARMIN (vía Intervals.icu)
 // ============================================================
+
+// ============================================================
+// IMPORTAR DE OPENSTREETMAP — busca senderos/rutas reales cerca de un
+// punto (vía Overpass API, gratis y pública) y los deja importar con
+// un clic. Los senderos largos suelen venir troceados en varios pedazos
+// en OpenStreetMap — los cosemos en un trazado continuo aquí mismo.
+// ============================================================
+
+function haversineSimple(a, b) {
+  const R = 6371000;
+  const dLat = (b.lat - a.lat) * Math.PI / 180, dLon = (b.lon - a.lon) * Math.PI / 180;
+  const lat1 = a.lat * Math.PI / 180, lat2 = b.lat * Math.PI / 180;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+function stitchSegments(segments) {
+  const valid = segments.filter(s => s && s.length > 1);
+  if (!valid.length) return [];
+  let path = [...valid[0]];
+  for (let i = 1; i < valid.length; i++) {
+    const seg = valid[i];
+    const last = path[path.length - 1];
+    const distToStart = haversineSimple(last, seg[0]);
+    const distToEnd = haversineSimple(last, seg[seg.length - 1]);
+    path = distToEnd < distToStart ? path.concat([...seg].reverse()) : path.concat(seg);
+  }
+  return path;
+}
+
+const OSM_ROUTE_TYPES = {
+  hiking: { osmValue: 'hiking', label: '🥾 Senderismo' },
+  cycling: { osmValue: 'bicycle', label: '🚴 Bici' },
+  mtb: { osmValue: 'mtb', label: '🚵 BTT' }
+};
+
+async function geocodePlace(placeName) {
+  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(placeName)}`;
+  const resp = await fetch(url, { headers: { 'Accept-Language': 'es' } });
+  if (!resp.ok) throw new Error('No se pudo buscar ese lugar.');
+  const results = await resp.json();
+  if (!results.length) throw new Error('No se ha encontrado ese lugar.');
+  return { lat: parseFloat(results[0].lat), lon: parseFloat(results[0].lon), label: results[0].display_name };
+}
+
+async function searchOsmRoutes(lat, lon, radiusM, osmValue) {
+  const query = `[out:json][timeout:25];
+relation["route"="${osmValue}"](around:${radiusM},${lat},${lon});
+out body;
+>;
+out skel qt;`;
+
+  const resp = await fetch('https://overpass-api.de/api/interpreter', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'data=' + encodeURIComponent(query)
+  });
+  if (!resp.ok) throw new Error('OpenStreetMap no respondió (puede estar saturado, prueba de nuevo en un minuto).');
+  const data = await resp.json();
+
+  const nodesById = {}, waysById = {}, relations = [];
+  for (const el of data.elements) {
+    if (el.type === 'node') nodesById[el.id] = { lat: el.lat, lon: el.lon };
+    else if (el.type === 'way') waysById[el.id] = el;
+    else if (el.type === 'relation') relations.push(el);
+  }
+
+  return relations.map(rel => {
+    const wayMembers = rel.members.filter(m => m.type === 'way');
+    const segments = wayMembers.map(m => {
+      const way = waysById[m.ref];
+      if (!way || !way.nodes) return null;
+      return way.nodes.map(nid => nodesById[nid]).filter(Boolean);
+    });
+    const points = stitchSegments(segments);
+    return {
+      osmId: rel.id,
+      name: (rel.tags && rel.tags.name) || `Sendero sin nombre (#${rel.id})`,
+      points
+    };
+  }).filter(r => r.points.length > 5); // descartamos trozos demasiado pequeños/rotos
+}
+
+async function renderImportOsm() {
+  const $v = document.getElementById('view');
+  $v.innerHTML = h`
+    <div class="topbar"><a href="#/" class="icon-btn">‹</a><h2>Importar de OpenStreetMap</h2></div>
+
+    <p style="font-size:12px; color:#888; margin-bottom:10px;">
+      Busca senderos y rutas reales, con nombre oficial, cerca de un lugar — vienen del mapa
+      colaborativo OpenStreetMap, gratis y sin necesidad de cuenta en ningún sitio externo.
+    </p>
+
+    <label>Buscar cerca de</label>
+    <input id="osmPlace" placeholder="Ej. Llançà, Cap de Creus...">
+    <button class="btn secondary" id="btnUseMyLocation" style="width:100%; margin-bottom:10px;">📍 Usar mi ubicación actual</button>
+
+    <label>Tipo</label>
+    <select id="osmType">
+      <option value="hiking">🥾 Senderismo</option>
+      <option value="cycling">🚴 Bici</option>
+      <option value="mtb">🚵 BTT</option>
+    </select>
+
+    <label>Radio de búsqueda</label>
+    <select id="osmRadius">
+      <option value="5000">5 km</option>
+      <option value="10000" selected>10 km</option>
+      <option value="20000">20 km</option>
+    </select>
+
+    <button class="btn" id="btnSearchOsm" style="width:100%; margin-top:6px;">Buscar rutas</button>
+
+    <div id="osmResults" style="margin-top:16px;"></div>
+  `;
+
+  let searchCenter = null;
+
+  document.getElementById('btnUseMyLocation').onclick = () => {
+    if (!('geolocation' in navigator)) { toast('Este navegador no da acceso a la ubicación.'); return; }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        searchCenter = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+        document.getElementById('osmPlace').value = '(tu ubicación actual)';
+        toast('Ubicación detectada');
+      },
+      () => toast('No se pudo obtener tu ubicación.')
+    );
+  };
+
+  document.getElementById('btnSearchOsm').onclick = async () => {
+    const results = document.getElementById('osmResults');
+    const placeText = document.getElementById('osmPlace').value.trim();
+    const radius = document.getElementById('osmRadius').value;
+    const activityKey = document.getElementById('osmType').value;
+
+    results.innerHTML = '<div class="spinner"></div>';
+
+    try {
+      let center = searchCenter;
+      if (!center) {
+        if (!placeText) throw new Error('Escribe un lugar o usa tu ubicación actual.');
+        center = await geocodePlace(placeText);
+      }
+
+      const found = await searchOsmRoutes(center.lat, center.lon, radius, OSM_ROUTE_TYPES[activityKey].osmValue);
+
+      if (!found.length) {
+        results.innerHTML = '<p style="color:#888; text-align:center;">No se ha encontrado ninguna ruta de este tipo por aquí.</p>';
+        return;
+      }
+
+      results.innerHTML = found.map((r, i) => {
+        const dist = Stats.cumulativeDistances(r.points).pop();
+        return h`
+          <div class="card">
+            <b>${r.name}</b>
+            <p style="font-size:12px; color:#888;">${Stats.fmtDistance(dist)} · ${r.points.length} puntos</p>
+            <button class="btn secondary" data-import="${i}" style="width:100%;">Importar a Trams</button>
+          </div>
+        `;
+      }).join('');
+
+      results.querySelectorAll('[data-import]').forEach(btn => {
+        btn.onclick = async () => {
+          const r = found[+btn.dataset.import];
+          btn.disabled = true;
+          btn.textContent = 'Importando…';
+          try {
+            const summary = Stats.computeSummary(r.points);
+            if (!summary) throw new Error('Esta ruta no tiene un trazado válido.');
+            const storedPoints = Stats.downsampleForStorage(summary.points).map(p => ({
+              lat: +p.lat.toFixed(6), lon: +p.lon.toFixed(6),
+              ele: p.ele != null ? Math.round(p.ele) : null
+            }));
+            const saved = await DB.saveRoute({
+              name: r.name,
+              activityType: activityKey,
+              description: 'Importada de OpenStreetMap.',
+              distance: summary.totalDistance,
+              elevGain: summary.elevGain,
+              elevLoss: summary.elevLoss,
+              duration: null,
+              source: 'openstreetmap',
+              points: storedPoints
+            });
+            toast('¡Importada!');
+            navigate(`#/route/${saved.id}`);
+          } catch (e) {
+            toast(e.message || 'No se pudo importar');
+            btn.disabled = false;
+            btn.textContent = 'Importar a Trams';
+          }
+        };
+      });
+
+    } catch (e) {
+      console.error(e);
+      results.innerHTML = `<p style="color:#c0392b;">${e.message}</p>`;
+    }
+  };
+}
 
 async function renderConnect() {
   const $v = document.getElementById('view');
