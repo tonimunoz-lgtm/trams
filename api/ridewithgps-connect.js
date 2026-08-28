@@ -98,19 +98,19 @@ export default async function handler(req, res) {
 
     console.log('Respuesta completa de RideWithGPS al conectar:', text);
 
-    const authToken = data.auth_token || (data.user && data.user.auth_token);
-    const userId = data.user_id || (data.user && data.user.id);
-    const displayName = data.user && data.user.name;
+    // El token de verdad viene un nivel más adentro de lo que parecía a
+    // simple vista: { auth_token: { auth_token: "...", user: {...} } }
+    const authTokenObj = data.auth_token;
+    const authToken = authTokenObj && authTokenObj.auth_token;
+    const userId = authTokenObj && authTokenObj.user && authTokenObj.user.id;
+    const displayName = authTokenObj && authTokenObj.user && authTokenObj.user.name;
 
     if (!authToken) {
       res.status(502).json({ error: `RideWithGPS no devolvió un token. Respuesta: ${text.slice(0, 300)}` });
       return;
     }
 
-    // DEBUG TEMPORAL: incluimos la respuesta real completa para verla en
-    // pantalla sin tener que rebuscar en los logs de Vercel — la quitamos
-    // en cuanto confirmemos que el campo que leemos es el correcto.
-    res.status(200).json({ ok: true, authToken: String(authToken), userId, displayName, debugRaw: text });
+    res.status(200).json({ ok: true, authToken: String(authToken), userId, displayName });
 
   } catch (e) {
     console.error('Error llamando a RideWithGPS', e);
