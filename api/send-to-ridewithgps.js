@@ -141,7 +141,15 @@ export default async function handler(req, res) {
       return;
     }
 
-    res.status(200).json({ ok: true, rideWithGpsRoute: data });
+    console.log('Respuesta completa de RideWithGPS al crear la ruta:', text);
+
+    // Comprobamos varias formas posibles de encontrar el id — ya hemos
+    // visto que RideWithGPS anida las cosas un nivel más de lo esperado
+    // en otros endpoints, así que cubrimos varias posibilidades.
+    const routeId = (data && data.route && data.route.id) || (data && data.id) || null;
+    const routeUrl = routeId ? `https://ridewithgps.com/routes/${routeId}` : null;
+
+    res.status(200).json({ ok: true, rideWithGpsRoute: data, routeUrl });
 
   } catch (e) {
     console.error('Error llamando a RideWithGPS', e);
