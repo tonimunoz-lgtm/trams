@@ -182,10 +182,22 @@ async function deleteGarminIntegration() {
   await deleteDoc(doc(integrationsCol(uid()), 'garmin'));
 }
 
+async function saveRideWithGPSIntegration({ authToken, rwgpsUserId }) {
+  await setDoc(doc(integrationsCol(uid()), 'ridewithgps'), {
+    source: 'ridewithgps', authToken, rwgpsUserId, updatedAt: serverTimestamp()
+  });
+}
+
+async function getRideWithGPSIntegration() {
+  const snap = await getDoc(doc(integrationsCol(uid()), 'ridewithgps'));
+  return snap.exists() ? snap.data() : null;
+}
+
 export const DB = {
   saveRoute, getRoute, listRecentRoutes, listRoutes, deleteRoute,
   addPhoto, listPhotos, deletePhoto,
   addComment, listComments, deleteComment,
   addFavorite, removeFavorite, isFavorite, listFavoriteIds,
-  saveGarminIntegration, getGarminIntegration, deleteGarminIntegration
+  saveGarminIntegration, getGarminIntegration, deleteGarminIntegration,
+  saveRideWithGPSIntegration, getRideWithGPSIntegration
 };
