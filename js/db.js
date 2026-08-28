@@ -183,8 +183,15 @@ async function deleteGarminIntegration() {
 }
 
 async function saveRideWithGPSIntegration({ authToken, rwgpsUserId }) {
+  if (!authToken) throw new Error('RideWithGPS no devolvió un token de acceso.');
   await setDoc(doc(integrationsCol(uid()), 'ridewithgps'), {
-    source: 'ridewithgps', authToken, rwgpsUserId, updatedAt: serverTimestamp()
+    source: 'ridewithgps',
+    authToken,
+    // Firestore no admite "undefined" — si RideWithGPS no devuelve un id
+    // de usuario (no lo necesitamos para nada, solo el token), lo dejamos
+    // en null en vez de dejar que rompa el guardado.
+    rwgpsUserId: rwgpsUserId != null ? rwgpsUserId : null,
+    updatedAt: serverTimestamp()
   });
 }
 
