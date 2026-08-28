@@ -36,6 +36,14 @@ async function router() {
   const [path, param] = hash.replace('#/', '').split('/');
   const key = '/' + path;
 
+  // Caso especial: la vista de "en directo" es la única de toda la app
+  // que funciona SIN sesión iniciada — es un enlace pensado para
+  // compartir con cualquiera, tenga o no cuenta en Trams.
+  if (key === '/live') {
+    renderLiveView(param);
+    return;
+  }
+
   if (!CURRENT_USER) {
     renderLogin();
     return;
@@ -227,6 +235,12 @@ function renderRecord() {
 
     <div class="map-box" id="recordMap"></div>
 
+    <label id="liveShareRow" style="display:flex; align-items:center; gap:8px; margin-top:12px; font-weight:400;">
+      <input type="checkbox" id="liveShareCheck" style="width:auto; margin:0;">
+      📍 Compartir mi posición en directo (con quien tenga el enlace)
+    </label>
+    <div id="liveShareLink" style="display:none; margin-top:8px;"></div>
+
     <div id="recControls" style="display:flex; gap:10px; margin-top:14px;"></div>
 
     <p style="font-size:11px; color:#888; margin-top:12px; text-align:center; line-height:1.5;">
@@ -245,6 +259,8 @@ function renderRecord() {
   }
 
   let uiTimer = null;
+  let liveSessionId = null;
+  let lastLiveUpdateAt = 0;
 
   function fmtLiveDuration(sec) {
     sec = Math.floor(sec);
@@ -265,6 +281,15 @@ function renderRecord() {
     } else if (map && stats.points.length === 1) {
       map.setView([stats.points[0].lat, stats.points[0].lon], 16);
     }
+
+    // Actualizamos la posición compartida cada ~15s, no en cada punto —
+    // de sobra para que quien te siga vea algo casi en directo, sin
+    // machacar Firestore con una escritura por segundo.
+    if (liveSessionId && stats.points.length && (Date.now() - lastLiveUpdateAt > 15000)) {
+      lastLiveUpdateAt = Date.now();
+      const last = stats.points[stats.points.length - 1];
+      DB.updateLiveTracking(liveSessionId, { lat: last.lat, lon: last.lon }).catch(() => {});
+    }
   }
 
   async function handleStop() {
@@ -273,6 +298,7 @@ function renderRecord() {
       if (confirm('Apenas hay recorrido grabado. ¿Descartar esta grabación?')) {
         Recorder.discard();
         clearInterval(uiTimer);
+        if (liveSessionId) DB.stopLiveTracking(liveSessionId).catch(() => {});
         navigate('#/');
       }
       return;
@@ -280,6 +306,7 @@ function renderRecord() {
 
     const points = Recorder.stop();
     clearInterval(uiTimer);
+    if (liveSessionId) DB.stopLiveTracking(liveSessionId).catch(() => {});
 
     const summary = Stats.computeSummary(points);
     if (!summary) { toast('No se pudo procesar la grabación'); return; }
@@ -293,10 +320,31 @@ function renderRecord() {
     const state = Recorder.state;
 
     if (state === 'idle' || state === 'stopped') {
+      document.getElementById('liveShareRow').style.display = 'flex';
       controls.innerHTML = `<button class="btn" id="btnRecStart" style="width:100%;">▶ Empezar a grabar</button>`;
       document.getElementById('btnRecStart').onclick = async () => {
         try {
           await Recorder.start();
+
+          const wantsShare = document.getElementById('liveShareCheck').checked;
+          if (wantsShare) {
+            liveSessionId = await DB.startLiveTracking('una ruta en directo').catch(() => null);
+            if (liveSessionId) {
+              const url = `${window.location.origin}/#/live/${liveSessionId}`;
+              const linkBox = document.getElementById('liveShareLink');
+              linkBox.style.display = 'block';
+              linkBox.innerHTML = h`
+                <div style="background:#F4F6F3; border-radius:8px; padding:8px; font-size:11px; word-break:break-all;">${url}</div>
+                <button class="btn secondary" id="btnCopyLiveLink" style="width:100%; margin-top:6px;">📋 Copiar enlace para compartir</button>
+              `;
+              document.getElementById('btnCopyLiveLink').onclick = async () => {
+                try { await navigator.clipboard.writeText(url); toast('Enlace copiado'); }
+                catch { toast('No se pudo copiar'); }
+              };
+            }
+          }
+          document.getElementById('liveShareRow').style.display = 'none';
+
           renderControls();
           if (!uiTimer) uiTimer = setInterval(refreshUI, 1000);
         } catch (e) {
@@ -322,6 +370,76 @@ function renderRecord() {
 
   renderControls();
   refreshUI();
+}
+
+// ============================================================
+// VER "EN DIRECTO" — pantalla pública, funciona SIN sesión iniciada.
+// ============================================================
+
+function renderLiveView(sessionId) {
+  const $v = document.getElementById('view');
+  $v.innerHTML = `
+    <div class="topbar"><h2>🥾 Trams · En directo</h2></div>
+    <div class="card" id="liveStatusCard"><div class="spinner"></div></div>
+    <div class="map-box" id="liveMap"></div>
+  `;
+
+  if (!sessionId) {
+    document.getElementById('liveStatusCard').innerHTML = '<p style="color:#c0392b;">Enlace no válido.</p>';
+    return;
+  }
+
+  let map = null, marker = null;
+
+  const unsubscribe = DB.watchLiveTracking(sessionId, (data) => {
+    renderLiveStatus(data);
+
+    if (data && data.lat != null && data.lon != null && typeof L !== 'undefined') {
+      if (!map) {
+        map = L.map('liveMap', { attributionControl: false });
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(map);
+        map.setView([data.lat, data.lon], 15);
+      }
+      if (marker) marker.setLatLng([data.lat, data.lon]);
+      else marker = L.marker([data.lat, data.lon]).addTo(map);
+      map.panTo([data.lat, data.lon]);
+    }
+  });
+
+  // Nos damos de baja del listener en tiempo real al salir de esta
+  // pantalla — si no, seguiría escuchando cambios de fondo para siempre.
+  window.addEventListener('hashchange', function cleanup() {
+    unsubscribe();
+    window.removeEventListener('hashchange', cleanup);
+  }, { once: true });
+}
+
+function renderLiveStatus(data) {
+  const card = document.getElementById('liveStatusCard');
+  if (!card) return;
+
+  if (!data) {
+    card.innerHTML = '<p style="color:#888;">Este enlace ya no está disponible.</p>';
+    return;
+  }
+
+  if (!data.active) {
+    card.innerHTML = h`<p><b>${data.userName}</b> ha terminado de compartir su posición (${data.routeName}).</p>`;
+    return;
+  }
+
+  const secondsAgo = (data.updatedAt && data.updatedAt.toMillis)
+    ? Math.round((Date.now() - data.updatedAt.toMillis()) / 1000)
+    : null;
+  const stale = secondsAgo != null && secondsAgo > 120;
+
+  card.innerHTML = h`
+    <p><b>${data.userName}</b> está haciendo "${data.routeName}" ahora mismo. 🟢</p>
+    <p style="font-size:12px; color:${stale ? '#c0392b' : '#888'};">
+      ${secondsAgo != null ? `Última actualización hace ${secondsAgo}s` : 'Esperando la primera posición…'}
+      ${stale ? ' — puede que haya perdido la conexión' : ''}
+    </p>
+  `;
 }
 
 // ============================================================
