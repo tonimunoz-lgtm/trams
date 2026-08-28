@@ -495,7 +495,6 @@ async function renderConnect() {
       if (!resp.ok) throw new Error(data.error || `Error ${resp.status}`);
 
       await DB.saveRideWithGPSIntegration({ authToken: data.authToken, rwgpsUserId: data.userId });
-      if (data.debugRaw) alert('Respuesta real de RideWithGPS (para diagnóstico):\n\n' + data.debugRaw);
       toast('RideWithGPS conectado');
       renderConnect();
     } catch (e) {
