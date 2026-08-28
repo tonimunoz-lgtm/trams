@@ -25,7 +25,7 @@ export default async function handler(req, res) {
 
     try {
       const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(place)}`;
-      const geoResp = await fetch(url, { headers: { 'Accept-Language': 'es', 'User-Agent': 'Trams-App' } });
+      const geoResp = await fetch(url, { headers: { 'Accept-Language': 'es', 'Accept': 'application/json', 'User-Agent': 'Trams-App' } });
       const results = await geoResp.json();
       if (!results.length) { res.status(404).json({ error: 'No se ha encontrado ese lugar.' }); return; }
       res.status(200).json({ lat: parseFloat(results[0].lat), lon: parseFloat(results[0].lon), label: results[0].display_name });
@@ -52,7 +52,11 @@ out skel qt;`;
   try {
     const overpassResp = await fetch('https://overpass-api.de/api/interpreter', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': '*/*',
+        'User-Agent': 'Trams-App (contacto: sin publicar)'
+      },
       body: 'data=' + encodeURIComponent(query)
     });
 
