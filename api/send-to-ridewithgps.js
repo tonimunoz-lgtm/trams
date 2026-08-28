@@ -100,10 +100,20 @@ export default async function handler(req, res) {
   // — su propia documentación confirma que crear rutas todavía no está
   // disponible en v1, solo lectura/borrado).
   try {
-    const rwResp = await fetch(`https://ridewithgps.com/routes.json?apikey=${apiKey}&auth_token=${rwToken}`, {
+    // Igual que en la autenticación, reforzamos mandando las credenciales
+    // por varias vías a la vez (URL, cabeceras) — este endpoint parece
+    // esperar el auth_token de forma distinta al de autenticación.
+    const url = `https://ridewithgps.com/routes.json?apikey=${encodeURIComponent(apiKey)}&auth_token=${encodeURIComponent(rwToken)}&version=2`;
+    const rwResp = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-rwgps-api-key': apiKey,
+        'x-rwgps-auth-token': rwToken,
+        'Authorization': `Bearer ${rwToken}`
+      },
       body: JSON.stringify({
+        apikey: apiKey, api_key: apiKey, auth_token: rwToken,
         route: {
           name: route.name || 'Ruta de Trams',
           description: route.description || 'Importada desde Trams',
