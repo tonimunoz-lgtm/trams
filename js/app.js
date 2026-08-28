@@ -856,7 +856,16 @@ async function setupComments(route) {
 
 function drawElevationChart(points) {
   const el = document.getElementById('elevChart');
-  if (!el || typeof Chart === 'undefined' || !points || points.length < 2) return;
+  if (!el) return;
+
+  if (typeof Chart === 'undefined') {
+    el.parentElement.innerHTML = '<p style="color:#c0392b; font-size:13px;">No se pudo cargar el gráfico (fallo de red al cargar la librería). Recarga la página.</p>';
+    return;
+  }
+  if (!points || points.length < 2) {
+    el.parentElement.innerHTML = '<p style="color:#888; font-size:13px;">Esta ruta no tiene datos de altitud.</p>';
+    return;
+  }
 
   const cum = Stats.cumulativeDistances(points);
   const labels = cum.map(d => (d / 1000).toFixed(1));
