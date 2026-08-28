@@ -795,6 +795,11 @@ async function renderRouteDetail(id) {
       if (!resp.ok) throw new Error(data.error || `Error ${resp.status}`);
 
       if (data.routeUrl) {
+        // Nos acordamos del enlace, para poder ofrecer borrarla también
+        // ahí si algún día borras esta ruta desde Trams.
+        route.rideWithGpsUrl = data.routeUrl;
+        DB.updateRoute(route.id, { rideWithGpsUrl: data.routeUrl }).catch(() => {});
+
         if (confirm('¡Enviada a RideWithGPS! ¿Abrirla ahora para darle a "Enviar al reloj"?')) {
           window.open(data.routeUrl, '_blank');
         }
@@ -817,10 +822,22 @@ async function renderRouteDetail(id) {
   if (isMine) {
     document.getElementById('btnEditRoute').onclick = () => showEditRouteForm(route);
     document.getElementById('btnDeleteRoute').onclick = async () => {
-      if (!confirm(`¿Borrar "${route.name}"? No se puede deshacer. (Si la enviaste a RideWithGPS, esa copia no se borra sola — tendrías que quitarla allí a mano si quieres.)`)) return;
+      const confirmMsg = route.rideWithGpsUrl
+        ? `¿Borrar "${route.name}"? No se puede deshacer.`
+        : `¿Borrar "${route.name}"? No se puede deshacer. (Si la enviaste a RideWithGPS, esa copia no se borra sola — tendrías que quitarla allí a mano si quieres.)`;
+      if (!confirm(confirmMsg)) return;
+
       try {
         await DB.deleteRoute(route.id);
-        toast('Ruta borrada');
+        toast('Ruta borrada de Trams');
+
+        // Si la enviamos alguna vez a RideWithGPS, ofrecemos ir directos
+        // a esa ruta ahí para borrarla también — mismo patrón que al
+        // enviarla al reloj.
+        if (route.rideWithGpsUrl && confirm('También está en tu cuenta de RideWithGPS. ¿Abrirla ahí para borrarla también?')) {
+          window.open(route.rideWithGpsUrl, '_blank');
+        }
+
         navigate('#/');
       } catch (e) {
         toast(e.message || 'No se pudo borrar (solo el autor puede)');
