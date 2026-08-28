@@ -716,14 +716,19 @@ async function renderRouteDetail(id) {
     return;
   }
 
+  const isMine = CURRENT_USER && route.createdBy === CURRENT_USER.uid;
+
   $v.innerHTML = h`
     <div class="topbar">
       <a href="#/" class="icon-btn">‹</a>
       <h2 style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;">${route.name}</h2>
+      ${isMine ? '<button class="icon-btn" id="btnEditRoute" title="Editar">✏️</button>' : ''}
+      ${isMine ? '<button class="icon-btn" id="btnDeleteRoute" title="Borrar">🗑</button>' : ''}
       <button class="icon-btn" id="btnFavorite">☆</button>
     </div>
 
     <div class="map-box" id="detailMap"></div>
+    <div id="editRouteBox"></div>
 
     <div class="card">
       <p style="font-size:12px; color:#888;">${ACTIVITY_LABELS[route.activityType] || ''} · Subida por ${route.createdByName}</p>
@@ -808,6 +813,63 @@ async function renderRouteDetail(id) {
   setupFavoriteButton(route);
   setupPhotos(route);
   setupComments(route);
+
+  if (isMine) {
+    document.getElementById('btnEditRoute').onclick = () => showEditRouteForm(route);
+    document.getElementById('btnDeleteRoute').onclick = async () => {
+      if (!confirm(`¿Borrar "${route.name}"? No se puede deshacer. (Si la enviaste a RideWithGPS, esa copia no se borra sola — tendrías que quitarla allí a mano si quieres.)`)) return;
+      try {
+        await DB.deleteRoute(route.id);
+        toast('Ruta borrada');
+        navigate('#/');
+      } catch (e) {
+        toast(e.message || 'No se pudo borrar (solo el autor puede)');
+      }
+    };
+  }
+}
+
+function showEditRouteForm(route) {
+  const box = document.getElementById('editRouteBox');
+  box.innerHTML = h`
+    <div class="card">
+      <label>Nombre</label>
+      <input id="editName" value="${route.name || ''}">
+      <label>Tipo de actividad</label>
+      <select id="editActivity">
+        ${Object.entries(ACTIVITY_LABELS).map(([key, label]) =>
+          `<option value="${key}" ${route.activityType === key ? 'selected' : ''}>${label}</option>`
+        ).join('')}
+      </select>
+      <label>Descripción</label>
+      <textarea id="editDesc">${route.description || ''}</textarea>
+      <div style="display:flex; gap:8px;">
+        <button class="btn" id="btnSaveEdit" style="flex:1;">Guardar cambios</button>
+        <button class="btn secondary" id="btnCancelEdit">Cancelar</button>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('btnCancelEdit').onclick = () => { box.innerHTML = ''; };
+
+  document.getElementById('btnSaveEdit').onclick = async () => {
+    const btn = document.getElementById('btnSaveEdit');
+    btn.disabled = true;
+    btn.textContent = 'Guardando…';
+    try {
+      await DB.updateRoute(route.id, {
+        name: document.getElementById('editName').value.trim() || route.name,
+        activityType: document.getElementById('editActivity').value,
+        description: document.getElementById('editDesc').value.trim()
+      });
+      toast('Ruta actualizada');
+      renderRouteDetail(route.id);
+    } catch (e) {
+      toast(e.message || 'No se pudo guardar');
+      btn.disabled = false;
+      btn.textContent = 'Guardar cambios';
+    }
+  };
 }
 
 function setupFavoriteButton(route) {
