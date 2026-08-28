@@ -64,10 +64,17 @@ export default async function handler(req, res) {
   }
 
   try {
-    const rwResp = await fetch('https://ridewithgps.com/api/v1/auth_tokens.json', {
+    // Reforzamos: mandamos la clave tanto en la URL como en el cuerpo de la
+    // petición, para cubrir las dos convenciones más habituales sin tener
+    // que adivinar cuál usa exactamente RideWithGPS en este endpoint.
+    const url = `https://ridewithgps.com/api/v1/auth_tokens.json?apikey=${encodeURIComponent(apiKey)}`;
+    const rwResp = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ apikey: apiKey, email, password })
+      headers: {
+        'Content-Type': 'application/json',
+        'x-rwgps-api-key': apiKey
+      },
+      body: JSON.stringify({ apikey: apiKey, api_key: apiKey, email, password })
     });
 
     const text = await rwResp.text();
