@@ -1,4 +1,4 @@
-const CACHE = 'trams-v14';
+const CACHE = 'trams-v15';
 
 const ASSETS = [
   './',
