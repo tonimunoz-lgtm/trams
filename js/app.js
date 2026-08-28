@@ -405,6 +405,9 @@ async function renderConnect() {
   $v.innerHTML = `
     <div class="topbar"><a href="#/" class="icon-btn">‹</a><h2>Conectar mi Garmin</h2></div>
     <div class="card" id="garminCard"><div class="spinner"></div></div>
+
+    <div class="topbar" style="margin-top:20px;"><h2>Enviar rutas al reloj</h2></div>
+    <div class="card" id="rwgpsCard"><div class="spinner"></div></div>
   `;
 
   const card = document.getElementById('garminCard');
@@ -454,6 +457,51 @@ async function renderConnect() {
       renderConnect();
     };
   }
+
+  // --- RideWithGPS (puente para mandar rutas al reloj) ---
+  const rwCard = document.getElementById('rwgpsCard');
+  const existingRw = await DB.getRideWithGPSIntegration().catch(() => null);
+
+  rwCard.innerHTML = h`
+    <p style="font-size:12px; color:#888; margin-bottom:10px;">
+      Con esto, cada ruta de Trams podrá "Enviarse al reloj": pasa por tu cuenta de RideWithGPS
+      (gratis, sin tarjeta) y de ahí a tu Garmin, si tienes su sincronización activada en
+      <a href="https://ridewithgps.com" target="_blank">ridewithgps.com</a> → Ajustes → Conexiones.
+    </p>
+    <label>Email de RideWithGPS</label>
+    <input id="rwEmail" type="email" placeholder="${existingRw ? '•••• (ya conectado)' : 'tu@email.com'}">
+    <label>Contraseña</label>
+    <input id="rwPassword" type="password" placeholder="Solo se usa una vez, no se guarda">
+    <button class="btn" id="btnSaveRw" style="width:100%; margin-top:6px;">${existingRw ? 'Reconectar' : 'Conectar RideWithGPS'}</button>
+    <p id="rwMsg" style="font-size:12px; margin-top:8px;"></p>
+  `;
+
+  document.getElementById('btnSaveRw').onclick = async () => {
+    const email = document.getElementById('rwEmail').value.trim();
+    const password = document.getElementById('rwPassword').value;
+    const msg = document.getElementById('rwMsg');
+    if (!email || !password) { msg.style.color = '#c0392b'; msg.textContent = 'Rellena email y contraseña.'; return; }
+
+    msg.style.color = '#888';
+    msg.textContent = 'Conectando…';
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const resp = await fetch('/api/ridewithgps-connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+        body: JSON.stringify({ email, password })
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || `Error ${resp.status}`);
+
+      await DB.saveRideWithGPSIntegration({ authToken: data.authToken, rwgpsUserId: data.userId });
+      toast('RideWithGPS conectado');
+      renderConnect();
+    } catch (e) {
+      msg.style.color = '#c0392b';
+      msg.textContent = e.message || 'No se pudo conectar.';
+    }
+  };
 }
 
 function renderFilterChips() {
@@ -571,6 +619,7 @@ async function renderRouteDetail(id) {
       </div>
 
       <button class="btn secondary" id="btnDownloadGPX" style="margin-top:12px; width:100%;">⬇ Descargar GPX</button>
+      <button class="btn" id="btnSendToWatch" style="margin-top:8px; width:100%;">⌚ Enviar al reloj</button>
     </div>
 
     <div class="section-title">Perfil de elevación</div>
@@ -606,6 +655,30 @@ async function renderRouteDetail(id) {
   drawElevationChart(route.points);
 
   document.getElementById('btnDownloadGPX').onclick = () => downloadGPX(route);
+
+  document.getElementById('btnSendToWatch').onclick = async () => {
+    const btn = document.getElementById('btnSendToWatch');
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = 'Enviando…';
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const resp = await fetch('/api/send-to-ridewithgps', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+        body: JSON.stringify({ routeId: route.id })
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || `Error ${resp.status}`);
+      toast('¡Enviada a RideWithGPS! Llegará a tu reloj cuando sincronice.');
+    } catch (e) {
+      console.error(e);
+      alert(e.message || 'No se pudo enviar la ruta.');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = original;
+    }
+  };
 
   setupFavoriteButton(route);
   setupPhotos(route);
