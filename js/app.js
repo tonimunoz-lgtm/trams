@@ -556,28 +556,24 @@ const OSM_ROUTE_TYPES = {
 };
 
 async function geocodePlace(placeName) {
-  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(placeName)}`;
-  const resp = await fetch(url, { headers: { 'Accept-Language': 'es' } });
-  if (!resp.ok) throw new Error('No se pudo buscar ese lugar.');
-  const results = await resp.json();
-  if (!results.length) throw new Error('No se ha encontrado ese lugar.');
-  return { lat: parseFloat(results[0].lat), lon: parseFloat(results[0].lon), label: results[0].display_name };
+  const resp = await fetch('/api/osm-search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'geocode', place: placeName })
+  });
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data.error || 'No se pudo buscar ese lugar.');
+  return data;
 }
 
 async function searchOsmRoutes(lat, lon, radiusM, osmValue) {
-  const query = `[out:json][timeout:25];
-relation["route"="${osmValue}"](around:${radiusM},${lat},${lon});
-out body;
->;
-out skel qt;`;
-
-  const resp = await fetch('https://overpass-api.de/api/interpreter', {
+  const resp = await fetch('/api/osm-search', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: 'data=' + encodeURIComponent(query)
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lat, lon, radius: radiusM, osmValue })
   });
-  if (!resp.ok) throw new Error('OpenStreetMap no respondió (puede estar saturado, prueba de nuevo en un minuto).');
   const data = await resp.json();
+  if (!resp.ok) throw new Error(data.error || 'OpenStreetMap no respondió.');
 
   const nodesById = {}, waysById = {}, relations = [];
   for (const el of data.elements) {
