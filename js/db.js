@@ -76,7 +76,7 @@ async function listRoutes({ activityType = null, count = 100 } = {}) {
 }
 
 async function updateRoute(id, changes) {
-  const allowed = ['name', 'description', 'activityType'];
+  const allowed = ['name', 'description', 'activityType', 'rideWithGpsUrl'];
   const payload = {};
   for (const key of allowed) {
     if (changes[key] !== undefined) payload[key] = changes[key];
