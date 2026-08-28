@@ -75,7 +75,26 @@ async function listRoutes({ activityType = null, count = 100 } = {}) {
   return routes;
 }
 
+async function updateRoute(id, changes) {
+  const allowed = ['name', 'description', 'activityType'];
+  const payload = {};
+  for (const key of allowed) {
+    if (changes[key] !== undefined) payload[key] = changes[key];
+  }
+  await setDoc(doc(db, 'routes', id), payload, { merge: true });
+}
+
 async function deleteRoute(id) {
+  // Limpiamos también las fotos y comentarios de esta ruta, para no
+  // dejar nada huérfano en Firestore (igual que ya hicimos en RunTrack).
+  const [photosSnap, commentsSnap] = await Promise.all([
+    getDocs(photosCol(id)).catch(() => ({ docs: [] })),
+    getDocs(commentsCol(id)).catch(() => ({ docs: [] }))
+  ]);
+  await Promise.all([
+    ...photosSnap.docs.map(d => deleteDoc(d.ref).catch(() => {})),
+    ...commentsSnap.docs.map(d => deleteDoc(d.ref).catch(() => {}))
+  ]);
   await deleteDoc(doc(db, 'routes', id));
 }
 
@@ -260,7 +279,7 @@ async function getRideWithGPSIntegration() {
 }
 
 export const DB = {
-  saveRoute, getRoute, listRecentRoutes, listRoutes, deleteRoute,
+  saveRoute, getRoute, listRecentRoutes, listRoutes, updateRoute, deleteRoute,
   addPhoto, listPhotos, deletePhoto,
   addComment, listComments, deleteComment,
   addFavorite, removeFavorite, isFavorite, listFavoriteIds,
