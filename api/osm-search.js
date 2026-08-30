@@ -10,21 +10,18 @@
 // Los mensajes de error se devuelven en català o castellà según la
 // cabecera X-Lang que manda el cliente (por defecto català).
 //
-// Búsqueda por nombre (body.name): muchos tramos tienen nombre propio
-// (p.ej. "Cinc Cims") pero no son un "lugar" geocodificable por Nominatim
-// — por eso el modo normal de "buscar cerca de un sitio" no los encuentra
-// si escribes el nombre del tramo ahí. En este modo filtramos por el tag
-// "name" de la relación en vez de (o además de) la posición:
-//   - Si hay lat/lon, buscamos dentro de un radio más generoso que el
-//     pedido (el nombre ya filtra mucho, el radio aquí solo desambigua
-//     entre tramos con nombres parecidos en zonas distintas).
-//   - Si no hay lat/lon, restringimos a un cuadro amplio alrededor de
-//     Catalunya (para no lanzar una búsqueda sin acotar a medio planeta,
-//     que en el servidor público de Overpass acabaría en timeout).
+// DOS MODOS, que no se mezclan:
+//   - Por proximidad (sin "name" en el body): el radio es un radio de
+//     verdad, filtro "around" de Overpass alrededor del punto — tal cual
+//     lo pide la persona usuaria. No hay ningún descarte por longitud del
+//     tramo aquí; eso se gestiona en el cliente como orden, no como filtro.
+//   - Por nombre (con "name"): IGNORAMOS lat/lon/radius por completo para
+//     la consulta — aunque el cliente los mande (los usa solo para
+//     ordenar resultados por distancia, no para restringir la búsqueda).
+//     Usamos siempre DEFAULT_BBOX como área de búsqueda, porque una
+//     consulta por nombre sin ningún límite geográfico en el servidor
+//     público de Overpass es demasiado pesada (riesgo real de timeout).
 
-const NAME_SEARCH_RADIUS_MULTIPLIER = 5;
-const NAME_SEARCH_MAX_RADIUS = 300000; // 300 km, tope para no disparar una consulta enorme
-const NAME_SEARCH_MIN_RADIUS = 5000;
 const DEFAULT_BBOX = '40.3,-1.5,43.5,4.5'; // Catalunya i voltants (Aragó, Franja, sud de França)
 
 const MSGS = {
@@ -53,11 +50,29 @@ function pickLang(req) {
   return l === 'es' ? 'es' : 'ca';
 }
 
-// Escapamos caracteres especiales de regex — el operador "~" de Overpass
-// hace match por expresión regular (PCRE), y el nombre lo escribe la
-// persona usuaria libremente.
-function escapeRegex(str) {
-  return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// Construye un patrón de regex "difuso" a partir del texto que escribe la
+// persona usuaria: insensible a mayúsculas (vía flag "i" en Overpass),
+// a espacios repetidos/distintos (\s+ entre palabras) y a acentos —
+// sustituyendo cada vocal (y "c"/"n") por una clase de caracteres con
+// sus variantes acentuadas más comunes en català/castellà/francès. Así
+// "Cinc Cims", "cinc  cims" o "cïnc cims" encuentran lo mismo.
+const ACCENT_CLASSES = {
+  a: '[aàáâä]', e: '[eèéêë]', i: '[iìíîï]', o: '[oòóôö]', u: '[uùúûü]',
+  c: '[cç]', n: '[nñ]'
+};
+
+function buildFuzzyNamePattern(raw) {
+  const words = String(raw).trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const wordPatterns = words.map(word => {
+    let pattern = '';
+    for (const ch of word) {
+      if (/[.*+?^${}()|[\]\\]/.test(ch)) pattern += '\\' + ch;
+      else if (ACCENT_CLASSES[ch]) pattern += ACCENT_CLASSES[ch];
+      else pattern += ch;
+    }
+    return pattern;
+  });
+  return wordPatterns.join('\\s+');
 }
 
 export default async function handler(req, res) {
@@ -91,8 +106,8 @@ export default async function handler(req, res) {
     return;
   }
 
-  // Modo 2 (por defecto): buscar rutas/senderos por proximidad y/o por
-  // nombre (Overpass).
+  // Modo 2 (por defecto): buscar rutas/senderos por proximidad o por
+  // nombre (Overpass) — ver nota de cabecera, no se combinan.
   const { lat, lon, radius, osmValue, name } = body || {};
   const hasCenter = lat != null && lon != null;
 
@@ -107,20 +122,11 @@ export default async function handler(req, res) {
     return;
   }
 
-  let areaClause;
-  if (name) {
-    if (hasCenter) {
-      const baseRadius = Math.max(Number(radius) || NAME_SEARCH_MIN_RADIUS, NAME_SEARCH_MIN_RADIUS);
-      const searchRadius = Math.min(baseRadius * NAME_SEARCH_RADIUS_MULTIPLIER, NAME_SEARCH_MAX_RADIUS);
-      areaClause = `(around:${searchRadius},${lat},${lon})`;
-    } else {
-      areaClause = `(${DEFAULT_BBOX})`;
-    }
-  } else {
-    areaClause = `(around:${radius},${lat},${lon})`;
-  }
-
-  const nameFilter = name ? `["name"~"${escapeRegex(name)}",i]` : '';
+  // Por nombre: SIEMPRE la zona por defecto, ignorando lat/lon/radius
+  // aunque vengan en el body (el cliente los manda solo para ordenar).
+  // Por proximidad: el radio real pedido, sin más.
+  const areaClause = name ? `(${DEFAULT_BBOX})` : `(around:${radius},${lat},${lon})`;
+  const nameFilter = name ? `["name"~"${buildFuzzyNamePattern(name)}",i]` : '';
 
   const query = `[out:json][timeout:25];
 relation["route"="${osmValue}"]${nameFilter}${areaClause};
