@@ -9,8 +9,41 @@
 //     logueado en Trams — igual que en trigger-sync.js)
 //   RIDEWITHGPS_API_KEY (la clave de NUESTRA app, la creas tú en
 //     ridewithgps.com/api/api_clients)
+//
+// Los mensajes de error se devuelven en català o castellà según la
+// cabecera X-Lang que manda el cliente (por defecto català).
 
 import admin from 'firebase-admin';
+
+const MSGS = {
+  ca: {
+    methodNotAllowed: 'Mètode no permès',
+    badServerConfig: (msg) => `Configuració del servidor incorrecta: ${msg}`,
+    missingToken: 'Falta el token d\u2019autenticació',
+    invalidSession: 'Sessió no vàlida, torna a iniciar sessió',
+    missingCredentials: 'Falta l\u2019email o la contrasenya de RideWithGPS',
+    missingApiKey: 'Falta RIDEWITHGPS_API_KEY a les variables d\u2019entorn de Vercel',
+    rwgpsRejected: (text) => `RideWithGPS ha respost: ${text}`,
+    noToken: (text) => `RideWithGPS no ha tornat cap token. Resposta: ${text}`,
+    contactError: 'No s\u2019ha pogut contactar amb RideWithGPS'
+  },
+  es: {
+    methodNotAllowed: 'Método no permitido',
+    badServerConfig: (msg) => `Configuración del servidor incorrecta: ${msg}`,
+    missingToken: 'Falta el token de autenticación',
+    invalidSession: 'Sesión no válida, vuelve a iniciar sesión',
+    missingCredentials: 'Falta email o contraseña de RideWithGPS',
+    missingApiKey: 'Falta RIDEWITHGPS_API_KEY en las variables de entorno de Vercel',
+    rwgpsRejected: (text) => `RideWithGPS respondió: ${text}`,
+    noToken: (text) => `RideWithGPS no devolvió un token. Respuesta: ${text}`,
+    contactError: 'No se pudo contactar con RideWithGPS'
+  }
+};
+
+function pickLang(req) {
+  const l = String(req.headers['x-lang'] || '').toLowerCase();
+  return l === 'es' ? 'es' : 'ca';
+}
 
 let initError = null;
 if (!admin.apps.length) {
@@ -25,25 +58,27 @@ if (!admin.apps.length) {
 }
 
 export default async function handler(req, res) {
+  const M = MSGS[pickLang(req)];
+
   if (req.method !== 'POST') {
-    res.status(405).json({ error: 'Método no permitido' });
+    res.status(405).json({ error: M.methodNotAllowed });
     return;
   }
   if (initError) {
-    res.status(500).json({ error: `Configuración del servidor incorrecta: ${initError.message}` });
+    res.status(500).json({ error: M.badServerConfig(initError.message) });
     return;
   }
 
   const authHeader = req.headers.authorization || '';
   const idToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
   if (!idToken) {
-    res.status(401).json({ error: 'Falta el token de autenticación' });
+    res.status(401).json({ error: M.missingToken });
     return;
   }
   try {
     await admin.auth().verifyIdToken(idToken);
   } catch (e) {
-    res.status(401).json({ error: 'Sesión no válida, vuelve a iniciar sesión' });
+    res.status(401).json({ error: M.invalidSession });
     return;
   }
 
@@ -53,13 +88,13 @@ export default async function handler(req, res) {
   }
   const { email, password } = body || {};
   if (!email || !password) {
-    res.status(400).json({ error: 'Falta email o contraseña de RideWithGPS' });
+    res.status(400).json({ error: M.missingCredentials });
     return;
   }
 
   const apiKey = process.env.RIDEWITHGPS_API_KEY;
   if (!apiKey) {
-    res.status(500).json({ error: 'Falta RIDEWITHGPS_API_KEY en las variables de entorno de Vercel' });
+    res.status(500).json({ error: M.missingApiKey });
     return;
   }
 
@@ -91,7 +126,7 @@ export default async function handler(req, res) {
       // error real y se puede corregir con precisión.
       console.error('RideWithGPS rechazó la autenticación', rwResp.status, text);
       res.status(rwResp.status || 502).json({
-        error: `RideWithGPS respondió: ${text.slice(0, 300)}`
+        error: M.rwgpsRejected(text.slice(0, 300))
       });
       return;
     }
@@ -106,7 +141,7 @@ export default async function handler(req, res) {
     const displayName = authTokenObj && authTokenObj.user && authTokenObj.user.name;
 
     if (!authToken) {
-      res.status(502).json({ error: `RideWithGPS no devolvió un token. Respuesta: ${text.slice(0, 300)}` });
+      res.status(502).json({ error: M.noToken(text.slice(0, 300)) });
       return;
     }
 
@@ -114,6 +149,6 @@ export default async function handler(req, res) {
 
   } catch (e) {
     console.error('Error llamando a RideWithGPS', e);
-    res.status(500).json({ error: 'No se pudo contactar con RideWithGPS' });
+    res.status(500).json({ error: M.contactError });
   }
 }
