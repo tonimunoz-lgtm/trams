@@ -13,16 +13,30 @@
 // DOS MODOS, que no se mezclan:
 //   - Por proximidad (sin "name" en el body): el radio es un radio de
 //     verdad, filtro "around" de Overpass alrededor del punto — tal cual
-//     lo pide la persona usuaria. No hay ningún descarte por longitud del
-//     tramo aquí; eso se gestiona en el cliente como orden, no como filtro.
+//     lo pide la persona usuaria. Una sola consulta, con geometría.
 //   - Por nombre (con "name"): IGNORAMOS lat/lon/radius por completo para
-//     la consulta — aunque el cliente los mande (los usa solo para
-//     ordenar resultados por distancia, no para restringir la búsqueda).
-//     Usamos siempre DEFAULT_BBOX como área de búsqueda, porque una
-//     consulta por nombre sin ningún límite geográfico en el servidor
-//     público de Overpass es demasiado pesada (riesgo real de timeout).
+//     la búsqueda — solo se usan en el cliente para ordenar por distancia.
+//
+//     OJO — por qué en DOS PASOS: al principio construíamos un regex
+//     "difuso" (con clases de caracteres para cada vocal acentuada) y se
+//     lo pasábamos directamente al operador "~" de Overpass. Resultó que
+//     el motor de regex del servidor público de Overpass no gestiona bien
+//     esas clases de caracteres acentuados — por eso "Camí dels Monjos"
+//     no aparecía buscando "cami dels monjos" aunque el tramo existe (se
+//     veía perfectamente buscando por ubicación, con el mismo filtro de
+//     tipo de ruta). En vez de depender de las rarezas del regex remoto,
+//     ahora la comparación aproximada (sin acentos, sin mayúsculas, sin
+//     espacios de más) la hacemos aquí mismo en JavaScript, con
+//     normalización Unicode de verdad:
+//       1. Pedimos a Overpass SOLO las etiquetas (sin geometría) de todas
+//          las rutas con nombre en la zona — respuesta ligera.
+//       2. Filtramos en el propio servidor con normalizeText(), que
+//          compara ignorando acentos/mayúsculas/espacios de verdad.
+//       3. Solo entonces pedimos la geometría completa de los tramos que
+//          de verdad han hecho match (por id), no de todos.
 
 const DEFAULT_BBOX = '40.3,-1.5,43.5,4.5'; // Catalunya i voltants (Aragó, Franja, sud de França)
+const MAX_NAME_MATCHES = 30; // tope de resultados a los que pedimos geometría
 
 const MSGS = {
   ca: {
@@ -50,29 +64,42 @@ function pickLang(req) {
   return l === 'es' ? 'es' : 'ca';
 }
 
-// Construye un patrón de regex "difuso" a partir del texto que escribe la
-// persona usuaria: insensible a mayúsculas (vía flag "i" en Overpass),
-// a espacios repetidos/distintos (\s+ entre palabras) y a acentos —
-// sustituyendo cada vocal (y "c"/"n") por una clase de caracteres con
-// sus variantes acentuadas más comunes en català/castellà/francès. Así
-// "Cinc Cims", "cinc  cims" o "cïnc cims" encuentran lo mismo.
-const ACCENT_CLASSES = {
-  a: '[aàáâä]', e: '[eèéêë]', i: '[iìíîï]', o: '[oòóôö]', u: '[uùúûü]',
-  c: '[cç]', n: '[nñ]'
-};
+// Normaliza texto para comparar "a lo aproximado": minúsculas, sin
+// acentos/diacríticos (vía descomposición Unicode NFD + quitar las
+// marcas combinadas), y espacios repetidos colapsados. Esto es JS
+// estándar de verdad, no un regex hecho a mano — por eso es fiable.
+function normalizeText(str) {
+  return String(str)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
-function buildFuzzyNamePattern(raw) {
-  const words = String(raw).trim().toLowerCase().split(/\s+/).filter(Boolean);
-  const wordPatterns = words.map(word => {
-    let pattern = '';
-    for (const ch of word) {
-      if (/[.*+?^${}()|[\]\\]/.test(ch)) pattern += '\\' + ch;
-      else if (ACCENT_CLASSES[ch]) pattern += ACCENT_CLASSES[ch];
-      else pattern += ch;
-    }
-    return pattern;
+async function overpassFetch(query) {
+  const resp = await fetch('https://overpass-api.de/api/interpreter', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': '*/*',
+      'User-Agent': 'Trams-App (contacto: sin publicar)'
+    },
+    body: 'data=' + encodeURIComponent(query)
   });
-  return wordPatterns.join('\\s+');
+  const text = await resp.text();
+  if (!resp.ok) {
+    const err = new Error(`OpenStreetMap: ${text.slice(0, 300)}`);
+    err.httpStatus = resp.status;
+    throw err;
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    const err = new Error('unrecognized');
+    err.unrecognized = true;
+    throw err;
+  }
 }
 
 export default async function handler(req, res) {
@@ -122,49 +149,59 @@ export default async function handler(req, res) {
     return;
   }
 
-  // Por nombre: SIEMPRE la zona por defecto, ignorando lat/lon/radius
-  // aunque vengan en el body (el cliente los manda solo para ordenar).
-  // Por proximidad: el radio real pedido, sin más.
-  const areaClause = name ? `(${DEFAULT_BBOX})` : `(around:${radius},${lat},${lon})`;
-  const nameFilter = name ? `["name"~"${buildFuzzyNamePattern(name)}",i]` : '';
+  try {
+    if (name) {
+      // Paso 1: solo etiquetas (sin geometría) de todas las rutas CON
+      // NOMBRE de este tipo en la zona por defecto — respuesta ligera.
+      const tagsQuery = `[out:json][timeout:25];
+relation["route"="${osmValue}"]["name"](${DEFAULT_BBOX});
+out tags;`;
 
-  const query = `[out:json][timeout:25];
-relation["route"="${osmValue}"]${nameFilter}${areaClause};
+      const tagsData = await overpassFetch(tagsQuery);
+
+      // Paso 2: comparación aproximada de verdad, en JS.
+      const target = normalizeText(name);
+      const matchedIds = (tagsData.elements || [])
+        .filter(el => el.type === 'relation' && el.tags && el.tags.name && normalizeText(el.tags.name).includes(target))
+        .map(el => el.id)
+        .slice(0, MAX_NAME_MATCHES);
+
+      if (!matchedIds.length) {
+        res.status(200).json({ elements: [] });
+        return;
+      }
+
+      // Paso 3: geometría completa, solo de los que han hecho match.
+      const geomQuery = `[out:json][timeout:25];
+relation(id:${matchedIds.join(',')});
 out body;
 >;
 out skel qt;`;
 
-  try {
-    const overpassResp = await fetch('https://overpass-api.de/api/interpreter', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': '*/*',
-        'User-Agent': 'Trams-App (contacto: sin publicar)'
-      },
-      body: 'data=' + encodeURIComponent(query)
-    });
-
-    const text = await overpassResp.text();
-
-    if (!overpassResp.ok) {
-      console.error('Overpass rechazó la consulta', overpassResp.status, text.slice(0, 500));
-      res.status(overpassResp.status || 502).json({
-        error: `OpenStreetMap: ${text.slice(0, 300)}`
-      });
+      const geomData = await overpassFetch(geomQuery);
+      res.status(200).json(geomData);
       return;
     }
 
-    let data;
-    try { data = JSON.parse(text); } catch {
-      res.status(502).json({ error: M.overpassUnrecognized });
-      return;
-    }
+    // Búsqueda por proximidad: una sola consulta con geometría directa.
+    const query = `[out:json][timeout:25];
+relation["route"="${osmValue}"](around:${radius},${lat},${lon});
+out body;
+>;
+out skel qt;`;
 
+    const data = await overpassFetch(query);
     res.status(200).json(data);
 
   } catch (e) {
-    console.error('Error llamando a Overpass', e);
-    res.status(500).json({ error: M.overpassError });
+    if (e.unrecognized) {
+      res.status(502).json({ error: M.overpassUnrecognized });
+    } else if (e.httpStatus) {
+      console.error('Overpass rechazó la consulta', e.httpStatus, e.message);
+      res.status(e.httpStatus).json({ error: e.message });
+    } else {
+      console.error('Error llamando a Overpass', e);
+      res.status(500).json({ error: M.overpassError });
+    }
   }
 }
