@@ -154,11 +154,25 @@ function renderUpload() {
       <input type="file" id="fileInput" accept=".gpx" style="display:none;">
       <div id="uploadStatus"></div>
     </div>
+
+    <div class="section-title">${t('upload.urlTitle')}</div>
+    <div class="card">
+      <p style="font-size:12px; color:#888; margin-bottom:10px;">${t('upload.urlDesc')}</p>
+      <input id="gpxUrlInput" placeholder="${t('upload.urlPlaceholder')}">
+      <button class="btn secondary" id="btnImportGpxUrl" style="width:100%;">${t('upload.urlBtn')}</button>
+      <div id="urlUploadStatus"></div>
+    </div>
   `;
 
   document.getElementById('dropzone').onclick = () => document.getElementById('fileInput').click();
   document.getElementById('fileInput').onchange = (e) => {
     if (e.target.files.length) handleFile(e.target.files[0]);
+  };
+
+  document.getElementById('btnImportGpxUrl').onclick = () => {
+    const url = document.getElementById('gpxUrlInput').value.trim();
+    if (!url) { toast(t('upload.urlMissing')); return; }
+    handleGpxUrl(url);
   };
 }
 
@@ -178,6 +192,44 @@ async function handleFile(file) {
   } catch (e) {
     console.error(e);
     status.innerHTML = `<p style="color:#c0392b;">${e.message}</p>`;
+  }
+}
+
+// Descarga un GPX desde una URL directa (p.ej. la web oficial de una
+// carrera) a través de nuestro puente en el servidor (api/fetch-gpx.js)
+// — evita el problema de CORS y comprueba que el contenido sea GPX de
+// verdad. NO funciona con páginas que exigen login (Wikiloc, Strava...)
+// para el enlace real; en esos casos hay que bajar el archivo a mano y
+// usar el selector de archivo de arriba.
+async function handleGpxUrl(url) {
+  const status = document.getElementById('urlUploadStatus');
+  const btn = document.getElementById('btnImportGpxUrl');
+  btn.disabled = true;
+  status.innerHTML = `<div class="spinner"></div><p>${t('upload.urlFetching')}</p>`;
+
+  try {
+    const resp = await fetch('/api/fetch-gpx', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Lang': getLang() },
+      body: JSON.stringify({ url })
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || t('upload.urlError'));
+
+    const { points, name } = Parsers.parseGPX(data.gpx);
+    if (points.length < 2) throw new Error(t('upload.invalidTrack'));
+
+    const summary = Stats.computeSummary(points);
+    if (!summary) throw new Error(t('upload.statsError'));
+
+    status.innerHTML = '';
+    showPreview(summary, name, 'gpx-url');
+
+  } catch (e) {
+    console.error(e);
+    status.innerHTML = `<p style="color:#c0392b;">${e.message}</p>`;
+  } finally {
+    btn.disabled = false;
   }
 }
 
@@ -492,7 +544,6 @@ async function renderList() {
   $v.innerHTML = `
     <div class="topbar">
       <h2>${t('list.title')}</h2>
-      <button class="icon-btn" id="btnQuickSync" title="${t('list.syncTitle')}">↻</button>
       <a href="#/connect" class="icon-btn" title="${t('list.connectTitle')}">⌚</a>
       <button class="icon-btn" id="btnLogout">⏻</button>
     </div>
@@ -509,42 +560,9 @@ async function renderList() {
 
   document.getElementById('btnLogout').onclick = () => signOut(auth);
   document.getElementById('searchInput').oninput = renderFilteredRoutes;
-  setupQuickSync();
 
   renderFilterChips();
   await loadAndRenderRoutes();
-}
-
-function setupQuickSync() {
-  const btn = document.getElementById('btnQuickSync');
-  if (!btn) return;
-
-  btn.onclick = async () => {
-    if (btn.disabled) return;
-    btn.disabled = true;
-    const original = btn.textContent;
-    btn.textContent = '…';
-
-    try {
-      const idToken = await auth.currentUser.getIdToken();
-      const resp = await fetch('/api/trigger-sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}`, 'X-Lang': getLang() },
-        body: JSON.stringify({ days: 1 })
-      });
-      if (!resp.ok) {
-        const data = await resp.json().catch(() => ({}));
-        throw new Error(data.error || `Error ${resp.status}`);
-      }
-      toast(t('toast.syncTriggered'));
-    } catch (e) {
-      console.error(e);
-      toast(e.message || t('toast.syncError'));
-    } finally {
-      btn.textContent = original;
-      setTimeout(() => { btn.disabled = false; }, 8000);
-    }
-  };
 }
 
 // ============================================================
@@ -930,58 +948,9 @@ async function renderImportOsm() {
 async function renderConnect() {
   const $v = document.getElementById('view');
   $v.innerHTML = `
-    <div class="topbar"><a href="#/" class="icon-btn">‹</a><h2>${t('connect.garminTitle')}</h2></div>
-    <div class="card" id="garminCard"><div class="spinner"></div></div>
-
-    <div class="topbar" style="margin-top:20px;"><h2>${t('connect.sendTitle')}</h2></div>
+    <div class="topbar"><a href="#/" class="icon-btn">‹</a><h2>${t('connect.sendTitle')}</h2></div>
     <div class="card" id="rwgpsCard"><div class="spinner"></div></div>
   `;
-
-  const card = document.getElementById('garminCard');
-  const existing = await DB.getGarminIntegration().catch(() => null);
-
-  card.innerHTML = h`
-    <p style="font-size:12px; color:#888; margin-bottom:10px;">
-      ${t('connect.garminDesc')}
-    </p>
-
-    <label>${t('connect.apiKeyLabel')}</label>
-    <input id="garminApiKey" type="password" placeholder="${existing ? t('connect.apiKeySaved') : t('connect.apiKeyPlaceholder')}">
-
-    <label>${t('connect.athleteIdLabel')}</label>
-    <input id="garminAthleteId" value="${existing ? existing.intervalsAthleteId : '0'}">
-
-    <div style="display:flex; gap:8px; margin-top:6px;">
-      <button class="btn" id="btnSaveGarmin" style="flex:1;">${existing ? t('connect.updateKey') : t('connect.save')}</button>
-      ${existing ? `<button class="btn secondary" id="btnRemoveGarmin">${t('connect.disconnect')}</button>` : ''}
-    </div>
-    <p id="garminMsg" style="font-size:12px; margin-top:8px;"></p>
-  `;
-
-  document.getElementById('btnSaveGarmin').onclick = async () => {
-    const key = document.getElementById('garminApiKey').value.trim();
-    const athleteId = document.getElementById('garminAthleteId').value.trim() || '0';
-    const msg = document.getElementById('garminMsg');
-    if (!key) { msg.style.color = '#c0392b'; msg.textContent = t('connect.pasteFirst'); return; }
-    try {
-      await DB.saveGarminIntegration({ intervalsApiKey: key, intervalsAthleteId: athleteId });
-      toast(t('toast.garminConnected'));
-      renderConnect();
-    } catch (e) {
-      msg.style.color = '#c0392b';
-      msg.textContent = e.message || t('connect.saveError');
-    }
-  };
-
-  const btnRemove = document.getElementById('btnRemoveGarmin');
-  if (btnRemove) {
-    btnRemove.onclick = async () => {
-      if (!confirm(t('connect.disconnectConfirm'))) return;
-      await DB.deleteGarminIntegration();
-      toast(t('toast.disconnected'));
-      renderConnect();
-    };
-  }
 
   // --- RideWithGPS (puente para mandar rutas al reloj) ---
   const rwCard = document.getElementById('rwgpsCard');
