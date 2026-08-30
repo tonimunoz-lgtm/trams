@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="ca">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -16,8 +16,14 @@
 </head>
 <body>
 
+<!-- Botó fix per canviar d'idioma (català / castellà). La tria queda
+     desada al navegador — js/i18n.js s'encarrega de llegir-la i
+     aplicar-la a tota la interfície. -->
+<button id="langToggle" class="lang-toggle" title="Canviar idioma / Cambiar idioma">ES</button>
+
 <div id="view" class="view"></div>
 
+<script src="js/i18n.js"></script>
 <script src="js/stats.js"></script>
 <script src="js/parsers.js"></script>
 <script src="js/recorder.js"></script>
