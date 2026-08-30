@@ -729,14 +729,22 @@ async function renderImportOsm() {
     <button class="btn" id="btnSearchOsm" style="width:100%; margin-top:6px;">${t('osm.searchBtn')}</button>
 
     <div id="osmSortRow" style="display:none; margin-top:14px;">
-      <label>${t('osm.sortLabel')}</label>
-      <select id="osmSort">
+      <div id="osmSortDistWrap">
+        <label>${t('osm.sortDistanceLabel')}</label>
+        <select id="osmSortDist">
+          <option value="none">${t('osm.sortNone')}</option>
+          <option value="asc">${t('osm.sortDistAsc')}</option>
+          <option value="desc">${t('osm.sortDistDesc')}</option>
+        </select>
+      </div>
+
+      <label>${t('osm.sortLengthLabel')}</label>
+      <select id="osmSortLength">
         <option value="none">${t('osm.sortNone')}</option>
-        <option value="lengthAsc">${t('osm.sortLengthAsc')}</option>
-        <option value="lengthDesc">${t('osm.sortLengthDesc')}</option>
-        <option value="distAsc" id="osmSortDistAsc">${t('osm.sortDistAsc')}</option>
-        <option value="distDesc" id="osmSortDistDesc">${t('osm.sortDistDesc')}</option>
+        <option value="asc">${t('osm.sortLengthAsc')}</option>
+        <option value="desc">${t('osm.sortLengthDesc')}</option>
       </select>
+      <p style="font-size:11px; color:#888; margin:-4px 0 0;">${t('osm.sortComboHint')}</p>
     </div>
 
     <div id="osmResults" style="margin-top:16px;"></div>
@@ -758,12 +766,33 @@ async function renderImportOsm() {
     );
   };
 
-  function sortResults(list, sortKey) {
+  // Dos criterios INDEPENDIENTES pero combinables:
+  // - Proximidad: se compara por "franjas" de ~2km en vez de la distancia
+  //   exacta, para que routes a distancias parecidas queden agrupadas
+  //   (si no, con valores continuos casi nunca hay empate y el segundo
+  //   criterio no llegaría a usarse nunca).
+  // - Longitud: siempre exacta.
+  // Si se activan los dos, primero se agrupa por franja de proximidad y,
+  // DENTRO de cada franja, se ordena por longitud — así se puede pedir
+  // "de las más cercanas, las más cortas primero".
+  const DIST_BUCKET_M = 2000;
+
+  function sortResults(list, distDir, lengthDir) {
     const sorted = [...list];
-    if (sortKey === 'lengthAsc') sorted.sort((a, b) => a.lengthM - b.lengthM);
-    else if (sortKey === 'lengthDesc') sorted.sort((a, b) => b.lengthM - a.lengthM);
-    else if (sortKey === 'distAsc') sorted.sort((a, b) => (a.proximityM ?? Infinity) - (b.proximityM ?? Infinity));
-    else if (sortKey === 'distDesc') sorted.sort((a, b) => (b.proximityM ?? -Infinity) - (a.proximityM ?? -Infinity));
+    sorted.sort((a, b) => {
+      if (distDir !== 'none' && a.proximityM != null && b.proximityM != null) {
+        const bucketA = Math.round(a.proximityM / DIST_BUCKET_M);
+        const bucketB = Math.round(b.proximityM / DIST_BUCKET_M);
+        if (bucketA !== bucketB) return distDir === 'asc' ? bucketA - bucketB : bucketB - bucketA;
+      }
+      if (lengthDir !== 'none') {
+        return lengthDir === 'asc' ? a.lengthM - b.lengthM : b.lengthM - a.lengthM;
+      }
+      if (distDir !== 'none' && a.proximityM != null && b.proximityM != null) {
+        return distDir === 'asc' ? a.proximityM - b.proximityM : b.proximityM - a.proximityM;
+      }
+      return 0;
+    });
     return sorted;
   }
 
@@ -832,9 +861,14 @@ async function renderImportOsm() {
     });
   }
 
-  document.getElementById('osmSort').onchange = (e) => {
-    renderResultsList(sortResults(lastResults, e.target.value));
-  };
+  function applySortAndRender() {
+    const distDir = document.getElementById('osmSortDist').value;
+    const lengthDir = document.getElementById('osmSortLength').value;
+    renderResultsList(sortResults(lastResults, distDir, lengthDir));
+  }
+
+  document.getElementById('osmSortDist').onchange = applySortAndRender;
+  document.getElementById('osmSortLength').onchange = applySortAndRender;
 
   document.getElementById('btnSearchOsm').onclick = async () => {
     const results = document.getElementById('osmResults');
@@ -879,9 +913,9 @@ async function renderImportOsm() {
       }));
 
       const hasCenter = !!center;
-      document.getElementById('osmSortDistAsc').style.display = hasCenter ? '' : 'none';
-      document.getElementById('osmSortDistDesc').style.display = hasCenter ? '' : 'none';
-      document.getElementById('osmSort').value = 'none';
+      document.getElementById('osmSortDistWrap').style.display = hasCenter ? 'block' : 'none';
+      document.getElementById('osmSortDist').value = 'none';
+      document.getElementById('osmSortLength').value = 'none';
       sortRow.style.display = lastResults.length ? 'block' : 'none';
 
       renderResultsList(lastResults);
