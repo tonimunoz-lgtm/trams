@@ -248,24 +248,6 @@ function integrationsCol(targetUid) {
   return collection(db, 'users', targetUid, 'integrations');
 }
 
-async function saveGarminIntegration({ intervalsApiKey, intervalsAthleteId }) {
-  await setDoc(doc(integrationsCol(uid()), 'garmin'), {
-    source: 'garmin',
-    intervalsApiKey,
-    intervalsAthleteId: intervalsAthleteId || '0',
-    updatedAt: serverTimestamp()
-  });
-}
-
-async function getGarminIntegration() {
-  const snap = await getDoc(doc(integrationsCol(uid()), 'garmin'));
-  return snap.exists() ? snap.data() : null;
-}
-
-async function deleteGarminIntegration() {
-  await deleteDoc(doc(integrationsCol(uid()), 'garmin'));
-}
-
 async function saveRideWithGPSIntegration({ authToken, rwgpsUserId }) {
   if (!authToken) throw new Error('RideWithGPS no devolvió un token de acceso.');
   await setDoc(doc(integrationsCol(uid()), 'ridewithgps'), {
@@ -289,7 +271,6 @@ export const DB = {
   addPhoto, listPhotos, deletePhoto,
   addComment, listComments, deleteComment,
   addFavorite, removeFavorite, isFavorite, listFavoriteIds,
-  saveGarminIntegration, getGarminIntegration, deleteGarminIntegration,
   saveRideWithGPSIntegration, getRideWithGPSIntegration,
   startLiveTracking, updateLiveTracking, stopLiveTracking, watchLiveTracking
 };
