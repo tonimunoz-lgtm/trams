@@ -10,9 +10,15 @@ import {
   query, where, orderBy, limit, serverTimestamp, onSnapshot
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
+const { t } = window.I18n;
+
 function uid() {
-  if (!auth.currentUser) throw new Error('No hay sesión iniciada.');
+  if (!auth.currentUser) throw new Error(t('auth.notLoggedIn'));
   return auth.currentUser.uid;
+}
+
+function displayName() {
+  return (auth.currentUser && auth.currentUser.displayName) || t('auth.defaultName');
 }
 
 function routesCol() {
@@ -25,7 +31,7 @@ async function saveRoute(route) {
     ...route,
     id: ref.id,
     createdBy: uid(),
-    createdByName: (auth.currentUser && auth.currentUser.displayName) || 'Alguien',
+    createdByName: displayName(),
     createdAt: serverTimestamp()
   };
   await setDoc(ref, payload);
@@ -112,7 +118,7 @@ async function addPhoto(routeId, dataUrl) {
   const payload = {
     id: ref.id, dataUrl,
     uploadedBy: uid(),
-    uploadedByName: (auth.currentUser && auth.currentUser.displayName) || 'Alguien',
+    uploadedByName: displayName(),
     createdAt: serverTimestamp()
   };
   await setDoc(ref, payload);
@@ -140,11 +146,11 @@ function commentsCol(routeId) {
 
 async function addComment(routeId, text) {
   const trimmed = (text || '').trim();
-  if (!trimmed) throw new Error('El comentario está vacío.');
+  if (!trimmed) throw new Error(t('comments.postError'));
   const ref = doc(commentsCol(routeId));
   const payload = {
     id: ref.id, uid: uid(),
-    userName: (auth.currentUser && auth.currentUser.displayName) || 'Alguien',
+    userName: displayName(),
     text: trimmed.slice(0, 500),
     createdAt: serverTimestamp()
   };
@@ -205,8 +211,8 @@ async function startLiveTracking(routeName) {
   await setDoc(ref, {
     id: ref.id,
     uid: uid(),
-    userName: (auth.currentUser && auth.currentUser.displayName) || 'Alguien',
-    routeName: routeName || 'una ruta',
+    userName: displayName(),
+    routeName: routeName || t('record.liveDefaultName'),
     active: true,
     lat: null, lon: null,
     startedAt: serverTimestamp(),

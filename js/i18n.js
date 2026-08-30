@@ -1,0 +1,417 @@
+// i18n.js — sistema de traducción/traducció de Trams.
+// Idioma per defecte: català. Es pot canviar a castellà amb el botó de
+// la cantonada, i la tria queda desada al navegador (localStorage), de
+// manera que persisteix entre visites.
+//
+// Ús des d'altres fitxers: window.I18n.t('clau', { variable: 'valor' })
+
+const STRINGS = {
+  ca: {
+    'auth.tagline': 'Rutes compartides, sense quotes.',
+    'auth.namePlaceholder': 'El teu nom (només per registrar-te)',
+    'auth.emailPlaceholder': 'Correu electrònic',
+    'auth.passwordPlaceholder': 'Contrasenya',
+    'auth.submitLogin': 'Entrar',
+    'auth.submitSignup': 'Crear compte',
+    'auth.noAccount': 'No tens compte?',
+    'auth.switchToSignup': 'Registra\u2019t',
+    'auth.switchToLogin': 'Inicia sessió',
+    'auth.notLoggedIn': 'No hi ha sessió iniciada.',
+    'auth.defaultName': 'Algú',
+
+    'upload.title': 'Pujar ruta',
+    'upload.dropzoneTitle': 'Toca per triar un fitxer',
+    'upload.dropzoneSubtitle': 'GPX (.fit arribarà aviat)',
+    'upload.processing': 'Processant {name}…',
+    'upload.invalidTrack': 'El fitxer no conté un traçat vàlid.',
+    'upload.statsError': 'No s\u2019han pogut calcular les estadístiques d\u2019aquesta ruta.',
+
+    'stat.distance': 'Distància',
+    'stat.elevGain': 'Desnivell +',
+    'stat.elevLoss': 'Desnivell -',
+    'stat.duration': 'Durada',
+
+    'form.routeName': 'Nom de la ruta',
+    'form.routeNamePlaceholder': 'Ex. Cap de Creus per la costa',
+    'form.activityType': 'Tipus d\u2019activitat',
+    'form.description': 'Descripció (opcional)',
+    'form.descriptionPlaceholder': 'Com és la ruta, punts d\u2019interès, dificultat...',
+    'form.saveShared': 'Desar a la base compartida',
+    'form.saving': 'Desant…',
+    'form.unnamedRoute': 'Ruta sense nom',
+
+    'activity.hiking': '🥾 Senderisme',
+    'activity.running': '🏃 Córrer',
+    'activity.cycling': '🚴 Bici',
+    'activity.mtb': '🚵 BTT',
+    'activity.other': '📍 Altres',
+
+    'toast.routeSaved': 'Ruta desada!',
+    'toast.routeSaveError': 'No s\u2019ha pogut desar la ruta',
+
+    'record.title': 'Gravar en directe',
+    'record.time': 'TEMPS',
+    'record.liveShareLabel': '📍 Compartir la meva posició en directe (amb qui tingui l\u2019enllaç)',
+    'record.foregroundNote': 'Mantén Trams en primer pla i la pantalla encesa durant tota la ruta — si bloqueges el mòbil o canvies d\u2019app, el GPS es pot pausar (limitació del navegador).',
+    'record.start': '▶ Començar a gravar',
+    'record.pause': '⏸ Pausar',
+    'record.stop': '⏹ Finalitzar',
+    'record.resume': '▶ Reprendre',
+    'record.copyLink': '📋 Copiar enllaç per compartir',
+    'toast.linkCopied': 'Enllaç copiat',
+    'toast.linkCopyError': 'No s\u2019ha pogut copiar',
+    'record.geoError': 'No s\u2019ha pogut accedir a la ubicació. Revisa els permisos d\u2019aquest lloc.',
+    'record.discardConfirm': 'Amb prou feines hi ha recorregut gravat. Vols descartar aquesta gravació?',
+    'record.processError': 'No s\u2019ha pogut processar la gravació',
+    'record.liveDefaultName': 'una ruta en directe',
+
+    'live.title': '🥾 Trams · En directe',
+    'live.invalidLink': 'Enllaç no vàlid.',
+    'live.unavailable': 'Aquest enllaç ja no està disponible.',
+    'live.finished': '{name} ha acabat de compartir la seva posició ({routeName}).',
+    'live.active': '{name} està fent "{routeName}" ara mateix. 🟢',
+    'live.updatedAgo': 'Última actualització fa {n}s',
+    'live.waitingFirst': 'Esperant la primera posició…',
+    'live.staleNote': ' — pot ser que hagi perdut la connexió',
+
+    'list.title': '🥾 Trams',
+    'list.syncTitle': 'Actualitzar des de Garmin',
+    'list.connectTitle': 'Connectar el meu rellotge',
+    'list.uploadBtn': '+ Pujar una ruta',
+    'list.recordBtn': '🔴 Gravar en directe',
+    'list.importOsmBtn': '🗺️ Importar d\u2019OpenStreetMap',
+    'list.searchPlaceholder': 'Cercar per nom…',
+    'toast.syncTriggered': 'Sincronització llançada — trigarà uns 20-40s',
+    'toast.syncError': 'No s\u2019ha pogut llançar la sincronització',
+
+    'filter.all': 'Totes',
+    'filter.favorites': '★ Preferits',
+
+    'list.loadError': 'No s\u2019han pogut carregar les rutes.',
+    'list.noMatch': 'Cap ruta coincideix.',
+    'list.empty': 'Encara no hi ha rutes — sigues el primer!',
+    'list.uploadedBy': 'Pujada per {name}',
+
+    'osm.title': 'Importar d\u2019OpenStreetMap',
+    'osm.description': 'Cerca senders i rutes reals, amb nom oficial, a prop d\u2019un lloc — venen del mapa col·laboratiu OpenStreetMap, gratis i sense necessitat de compte en cap lloc extern.',
+    'osm.searchNear': 'Cercar a prop de',
+    'osm.placePlaceholder': 'Ex. Llançà, Cap de Creus...',
+    'osm.useLocation': '📍 Usar la meva ubicació actual',
+    'osm.type': 'Tipus',
+    'osm.radius': 'Radi de cerca',
+    'osm.searchBtn': 'Cercar rutes',
+    'osm.noGeo': 'Aquest navegador no dona accés a la ubicació.',
+    'osm.currentLocationLabel': '(la teva ubicació actual)',
+    'toast.locationDetected': 'Ubicació detectada',
+    'toast.locationError': 'No s\u2019ha pogut obtenir la teva ubicació.',
+    'osm.needPlace': 'Escriu un lloc o utilitza la teva ubicació actual.',
+    'osm.noResults': 'No s\u2019ha trobat cap ruta d\u2019aquest tipus per aquí (amb el marge de longitud aplicat al radi triat).',
+    'osm.points': '{n} punts',
+    'osm.importBtn': 'Importar a Trams',
+    'osm.importing': 'Important…',
+    'osm.invalidTrack': 'Aquesta ruta no té un traçat vàlid.',
+    'osm.importedDesc': 'Importada d\u2019OpenStreetMap.',
+    'toast.imported': 'Importada!',
+    'toast.importError': 'No s\u2019ha pogut importar',
+
+    'connect.garminTitle': 'Connectar el meu Garmin',
+    'connect.sendTitle': 'Enviar rutes al rellotge',
+    'connect.garminDesc': 'Aconsegueix la teva clau personal a <b>intervals.icu → Ajustos → Developer Settings → API Key</b>, i enganxa-la aquí. És només teva — ningú més la pot veure ni fer-la servir. Les teves activitats de córrer, caminar o bici s\u2019importaran automàticament com a rutes teves a Trams.',
+    'connect.apiKeyLabel': 'La teva clau d\u2019Intervals.icu',
+    'connect.apiKeySaved': '•••••••••••••• (ja desada)',
+    'connect.apiKeyPlaceholder': 'Enganxa la teva clau aquí',
+    'connect.athleteIdLabel': 'El teu Athlete ID (deixa\u2019l en "0" si és el teu propi compte)',
+    'connect.updateKey': 'Actualitzar clau',
+    'connect.save': 'Desar',
+    'connect.disconnect': 'Desconnectar',
+    'connect.pasteFirst': 'Enganxa la teva clau primer.',
+    'toast.garminConnected': 'Garmin connectat',
+    'connect.saveError': 'No s\u2019ha pogut desar.',
+    'connect.disconnectConfirm': 'Vols desconnectar Garmin?',
+    'toast.disconnected': 'Desconnectat',
+
+    'rwgps.desc': 'Amb això, cada ruta de Trams podrà "Enviar-se al rellotge": passa pel teu compte de RideWithGPS (gratis, sense targeta) i d\u2019allà al teu Garmin, si tens la seva sincronització activada a <a href="https://ridewithgps.com" target="_blank">ridewithgps.com</a> → Ajustos → Connexions.',
+    'rwgps.emailLabel': 'Correu de RideWithGPS',
+    'rwgps.emailSaved': '•••• (ja connectat)',
+    'rwgps.emailPlaceholder': 'tu@email.com',
+    'rwgps.passwordLabel': 'Contrasenya',
+    'rwgps.passwordPlaceholder': 'Només s\u2019utilitza una vegada, no es desa',
+    'rwgps.reconnect': 'Reconnectar',
+    'rwgps.connect': 'Connectar RideWithGPS',
+    'rwgps.fillFields': 'Omple correu i contrasenya.',
+    'rwgps.connecting': 'Connectant…',
+    'toast.rwgpsConnected': 'RideWithGPS connectat',
+    'rwgps.connectError': 'No s\u2019ha pogut connectar.',
+
+    'detail.uploadedBy': 'Pujada per {name}',
+    'detail.downloadGpx': '⬇ Descarregar GPX',
+    'detail.sendToWatch': '⌚ Enviar al rellotge',
+    'detail.elevationProfile': 'Perfil d\u2019elevació',
+    'detail.photos': 'Fotos',
+    'detail.comments': 'Comentaris',
+    'detail.addPhoto': '📷 Afegir foto',
+    'detail.commentPlaceholder': 'Escriu un comentari…',
+    'detail.send': 'Enviar',
+    'detail.notFound': 'Ruta no trobada.',
+    'detail.back': 'Tornar',
+    'detail.sending': 'Enviant…',
+    'detail.sentConfirm': 'Enviada a RideWithGPS! Vols obrir-la ara per fer clic a "Enviar al rellotge"?',
+    'toast.sentNoUrl': 'Enviada a RideWithGPS! Cerca-la al teu compte per enviar-la al rellotge.',
+    'detail.sendError': 'No s\u2019ha pogut enviar la ruta.',
+    'detail.deleteConfirmSimple': 'Vols esborrar "{name}"? No es pot desfer.',
+    'detail.deleteConfirmRwgps': 'Vols esborrar "{name}"? No es pot desfer. (Si la vas enviar a RideWithGPS, aquesta còpia no s\u2019esborra sola — hauries de treure-la allà a mà si vols.)',
+    'toast.routeDeleted': 'Ruta esborrada de Trams',
+    'detail.deleteRwgpsConfirm': 'També és al teu compte de RideWithGPS. Vols obrir-la allà per esborrar-la també?',
+    'detail.deleteError': 'No s\u2019ha pogut esborrar (només l\u2019autor pot)',
+
+    'edit.name': 'Nom',
+    'edit.activityType': 'Tipus d\u2019activitat',
+    'edit.description': 'Descripció',
+    'edit.save': 'Desar canvis',
+    'edit.saving': 'Desant…',
+    'edit.cancel': 'Cancel·lar',
+    'toast.routeUpdated': 'Ruta actualitzada',
+    'edit.saveError': 'No s\u2019ha pogut desar',
+
+    'toast.favError': 'No s\u2019han pogut actualitzar els preferits',
+
+    'photos.none': 'Encara no hi ha fotos.',
+    'photos.uploading': 'Pujant…',
+    'toast.photoAdded': 'Foto afegida',
+    'photos.uploadError': 'No s\u2019ha pogut pujar la foto',
+    'photos.delete': '🗑 Esborrar',
+    'photos.close': 'Tancar',
+    'photos.deleteConfirm': 'Vols esborrar aquesta foto?',
+    'toast.photoDeleted': 'Foto esborrada',
+    'photos.deleteError': 'No s\u2019ha pogut esborrar (només l\u2019autor pot)',
+
+    'comments.none': 'Encara no hi ha comentaris.',
+    'comments.delete': 'esborrar',
+    'comments.postError': 'No s\u2019ha pogut enviar el comentari',
+
+    'chart.loadError': 'No s\u2019ha pogut carregar el gràfic (fallada de xarxa en carregar la llibreria). Recarrega la pàgina.',
+    'chart.noElevation': 'Aquesta ruta no té dades d\u2019altitud.',
+
+    'lang.toggleTitle': 'Canviar idioma',
+
+    'parsers.fitNotSupported': 'Els fitxers .fit encara no estan suportats a Trams — puja el .gpx de la mateixa ruta mentrestant.',
+    'parsers.unsupportedFormat': 'Format no suportat. Puja un fitxer .gpx (de moment, .fit està en camí).'
+  },
+
+  es: {
+    'auth.tagline': 'Rutas compartidas, sin cuotas.',
+    'auth.namePlaceholder': 'Tu nombre (solo para registro)',
+    'auth.emailPlaceholder': 'Email',
+    'auth.passwordPlaceholder': 'Contraseña',
+    'auth.submitLogin': 'Entrar',
+    'auth.submitSignup': 'Crear cuenta',
+    'auth.noAccount': '¿No tienes cuenta?',
+    'auth.switchToSignup': 'Regístrate',
+    'auth.switchToLogin': 'Inicia sesión',
+    'auth.notLoggedIn': 'No hay sesión iniciada.',
+    'auth.defaultName': 'Alguien',
+
+    'upload.title': 'Subir ruta',
+    'upload.dropzoneTitle': 'Toca para elegir un archivo',
+    'upload.dropzoneSubtitle': 'GPX (.fit llegará pronto)',
+    'upload.processing': 'Procesando {name}…',
+    'upload.invalidTrack': 'El archivo no contiene un trazado válido.',
+    'upload.statsError': 'No se pudieron calcular las estadísticas de esta ruta.',
+
+    'stat.distance': 'Distancia',
+    'stat.elevGain': 'Desnivel +',
+    'stat.elevLoss': 'Desnivel -',
+    'stat.duration': 'Duración',
+
+    'form.routeName': 'Nombre de la ruta',
+    'form.routeNamePlaceholder': 'Ej. Cap de Creus por la costa',
+    'form.activityType': 'Tipo de actividad',
+    'form.description': 'Descripción (opcional)',
+    'form.descriptionPlaceholder': 'Cómo es la ruta, puntos de interés, dificultad...',
+    'form.saveShared': 'Guardar en la base compartida',
+    'form.saving': 'Guardando…',
+    'form.unnamedRoute': 'Ruta sin nombre',
+
+    'activity.hiking': '🥾 Senderismo',
+    'activity.running': '🏃 Correr',
+    'activity.cycling': '🚴 Bici',
+    'activity.mtb': '🚵 BTT',
+    'activity.other': '📍 Otro',
+
+    'toast.routeSaved': '¡Ruta guardada!',
+    'toast.routeSaveError': 'No se pudo guardar la ruta',
+
+    'record.title': 'Grabar en directo',
+    'record.time': 'TIEMPO',
+    'record.liveShareLabel': '📍 Compartir mi posición en directo (con quien tenga el enlace)',
+    'record.foregroundNote': 'Mantén Trams en primer plano y la pantalla encendida durante toda la ruta — si bloqueas el móvil o cambias de app, el GPS puede pausarse (limitación del navegador).',
+    'record.start': '▶ Empezar a grabar',
+    'record.pause': '⏸ Pausar',
+    'record.stop': '⏹ Finalizar',
+    'record.resume': '▶ Reanudar',
+    'record.copyLink': '📋 Copiar enlace para compartir',
+    'toast.linkCopied': 'Enlace copiado',
+    'toast.linkCopyError': 'No se pudo copiar',
+    'record.geoError': 'No se pudo acceder a la ubicación. Revisa los permisos de este sitio.',
+    'record.discardConfirm': 'Apenas hay recorrido grabado. ¿Descartar esta grabación?',
+    'record.processError': 'No se pudo procesar la grabación',
+    'record.liveDefaultName': 'una ruta en directo',
+
+    'live.title': '🥾 Trams · En directo',
+    'live.invalidLink': 'Enlace no válido.',
+    'live.unavailable': 'Este enlace ya no está disponible.',
+    'live.finished': '{name} ha terminado de compartir su posición ({routeName}).',
+    'live.active': '{name} está haciendo "{routeName}" ahora mismo. 🟢',
+    'live.updatedAgo': 'Última actualización hace {n}s',
+    'live.waitingFirst': 'Esperando la primera posición…',
+    'live.staleNote': ' — puede que haya perdido la conexión',
+
+    'list.title': '🥾 Trams',
+    'list.syncTitle': 'Actualizar desde Garmin',
+    'list.connectTitle': 'Conectar mi reloj',
+    'list.uploadBtn': '+ Subir una ruta',
+    'list.recordBtn': '🔴 Grabar en directo',
+    'list.importOsmBtn': '🗺️ Importar de OpenStreetMap',
+    'list.searchPlaceholder': 'Buscar por nombre…',
+    'toast.syncTriggered': 'Sincronización lanzada — tardará unos 20-40s',
+    'toast.syncError': 'No se pudo lanzar la sincronización',
+
+    'filter.all': 'Todos',
+    'filter.favorites': '★ Favoritos',
+
+    'list.loadError': 'No se pudieron cargar las rutas.',
+    'list.noMatch': 'Ninguna ruta coincide.',
+    'list.empty': 'Todavía no hay rutas — ¡sé el primero!',
+    'list.uploadedBy': 'Subida por {name}',
+
+    'osm.title': 'Importar de OpenStreetMap',
+    'osm.description': 'Busca senderos y rutas reales, con nombre oficial, cerca de un lugar — vienen del mapa colaborativo OpenStreetMap, gratis y sin necesidad de cuenta en ningún sitio externo.',
+    'osm.searchNear': 'Buscar cerca de',
+    'osm.placePlaceholder': 'Ej. Llançà, Cap de Creus...',
+    'osm.useLocation': '📍 Usar mi ubicación actual',
+    'osm.type': 'Tipo',
+    'osm.radius': 'Radio de búsqueda',
+    'osm.searchBtn': 'Buscar rutas',
+    'osm.noGeo': 'Este navegador no da acceso a la ubicación.',
+    'osm.currentLocationLabel': '(tu ubicación actual)',
+    'toast.locationDetected': 'Ubicación detectada',
+    'toast.locationError': 'No se pudo obtener tu ubicación.',
+    'osm.needPlace': 'Escribe un lugar o usa tu ubicación actual.',
+    'osm.noResults': 'No se ha encontrado ninguna ruta de este tipo por aquí (con el margen de longitud aplicado al radio elegido).',
+    'osm.points': '{n} puntos',
+    'osm.importBtn': 'Importar a Trams',
+    'osm.importing': 'Importando…',
+    'osm.invalidTrack': 'Esta ruta no tiene un trazado válido.',
+    'osm.importedDesc': 'Importada de OpenStreetMap.',
+    'toast.imported': '¡Importada!',
+    'toast.importError': 'No se pudo importar',
+
+    'connect.garminTitle': 'Conectar mi Garmin',
+    'connect.sendTitle': 'Enviar rutas al reloj',
+    'connect.garminDesc': 'Consigue tu clave personal en <b>intervals.icu → Ajustes → Developer Settings → API Key</b>, y pégala aquí. Es solo tuya — nadie más puede verla ni usarla. Tus actividades de correr, andar o bici se importarán automáticamente como rutas tuyas en Trams.',
+    'connect.apiKeyLabel': 'Tu clave de Intervals.icu',
+    'connect.apiKeySaved': '•••••••••••••• (ya guardada)',
+    'connect.apiKeyPlaceholder': 'Pega tu clave aquí',
+    'connect.athleteIdLabel': 'Tu Athlete ID (déjalo en "0" si es tu propia cuenta)',
+    'connect.updateKey': 'Actualizar clave',
+    'connect.save': 'Guardar',
+    'connect.disconnect': 'Desconectar',
+    'connect.pasteFirst': 'Pega tu clave primero.',
+    'toast.garminConnected': 'Garmin conectado',
+    'connect.saveError': 'No se pudo guardar.',
+    'connect.disconnectConfirm': '¿Desconectar Garmin?',
+    'toast.disconnected': 'Desconectado',
+
+    'rwgps.desc': 'Con esto, cada ruta de Trams podrá "Enviarse al reloj": pasa por tu cuenta de RideWithGPS (gratis, sin tarjeta) y de ahí a tu Garmin, si tienes su sincronización activada en <a href="https://ridewithgps.com" target="_blank">ridewithgps.com</a> → Ajustes → Conexiones.',
+    'rwgps.emailLabel': 'Email de RideWithGPS',
+    'rwgps.emailSaved': '•••• (ya conectado)',
+    'rwgps.emailPlaceholder': 'tu@email.com',
+    'rwgps.passwordLabel': 'Contraseña',
+    'rwgps.passwordPlaceholder': 'Solo se usa una vez, no se guarda',
+    'rwgps.reconnect': 'Reconectar',
+    'rwgps.connect': 'Conectar RideWithGPS',
+    'rwgps.fillFields': 'Rellena email y contraseña.',
+    'rwgps.connecting': 'Conectando…',
+    'toast.rwgpsConnected': 'RideWithGPS conectado',
+    'rwgps.connectError': 'No se pudo conectar.',
+
+    'detail.uploadedBy': 'Subida por {name}',
+    'detail.downloadGpx': '⬇ Descargar GPX',
+    'detail.sendToWatch': '⌚ Enviar al reloj',
+    'detail.elevationProfile': 'Perfil de elevación',
+    'detail.photos': 'Fotos',
+    'detail.comments': 'Comentarios',
+    'detail.addPhoto': '📷 Añadir foto',
+    'detail.commentPlaceholder': 'Escribe un comentario…',
+    'detail.send': 'Enviar',
+    'detail.notFound': 'Ruta no encontrada.',
+    'detail.back': 'Volver',
+    'detail.sending': 'Enviando…',
+    'detail.sentConfirm': '¡Enviada a RideWithGPS! ¿Abrirla ahora para darle a "Enviar al reloj"?',
+    'toast.sentNoUrl': '¡Enviada a RideWithGPS! Búscala en tu cuenta para mandarla al reloj.',
+    'detail.sendError': 'No se pudo enviar la ruta.',
+    'detail.deleteConfirmSimple': '¿Borrar "{name}"? No se puede deshacer.',
+    'detail.deleteConfirmRwgps': '¿Borrar "{name}"? No se puede deshacer. (Si la enviaste a RideWithGPS, esa copia no se borra sola — tendrías que quitarla allí a mano si quieres.)',
+    'toast.routeDeleted': 'Ruta borrada de Trams',
+    'detail.deleteRwgpsConfirm': 'También está en tu cuenta de RideWithGPS. ¿Abrirla ahí para borrarla también?',
+    'detail.deleteError': 'No se pudo borrar (solo el autor puede)',
+
+    'edit.name': 'Nombre',
+    'edit.activityType': 'Tipo de actividad',
+    'edit.description': 'Descripción',
+    'edit.save': 'Guardar cambios',
+    'edit.saving': 'Guardando…',
+    'edit.cancel': 'Cancelar',
+    'toast.routeUpdated': 'Ruta actualizada',
+    'edit.saveError': 'No se pudo guardar',
+
+    'toast.favError': 'No se pudo actualizar favoritos',
+
+    'photos.none': 'Todavía no hay fotos.',
+    'photos.uploading': 'Subiendo…',
+    'toast.photoAdded': 'Foto añadida',
+    'photos.uploadError': 'No se pudo subir la foto',
+    'photos.delete': '🗑 Borrar',
+    'photos.close': 'Cerrar',
+    'photos.deleteConfirm': '¿Borrar esta foto?',
+    'toast.photoDeleted': 'Foto borrada',
+    'photos.deleteError': 'No se pudo borrar (solo el autor puede)',
+
+    'comments.none': 'Sin comentarios todavía.',
+    'comments.delete': 'borrar',
+    'comments.postError': 'No se pudo enviar el comentario',
+
+    'chart.loadError': 'No se pudo cargar el gráfico (fallo de red al cargar la librería). Recarga la página.',
+    'chart.noElevation': 'Esta ruta no tiene datos de altitud.',
+
+    'lang.toggleTitle': 'Cambiar idioma',
+
+    'parsers.fitNotSupported': 'Los archivos .fit todavía no están soportados en Trams — sube el .gpx de la misma ruta mientras tanto.',
+    'parsers.unsupportedFormat': 'Formato no soportado. Sube un archivo .gpx (por ahora, .fit está en camino).'
+  }
+};
+
+const LANG_KEY = 'tramsLang';
+const DEFAULT_LANG = 'ca';
+
+function getLang() {
+  const stored = localStorage.getItem(LANG_KEY);
+  return (stored === 'ca' || stored === 'es') ? stored : DEFAULT_LANG;
+}
+
+function setLang(lang) {
+  localStorage.setItem(LANG_KEY, lang === 'es' ? 'es' : 'ca');
+}
+
+function t(key, vars) {
+  const lang = getLang();
+  let str = (STRINGS[lang] && STRINGS[lang][key]) || STRINGS[DEFAULT_LANG][key] || key;
+  if (vars) {
+    for (const k in vars) {
+      str = str.split('{' + k + '}').join(vars[k]);
+    }
+  }
+  return str;
+}
+
+window.I18n = { t, getLang, setLang, STRINGS };

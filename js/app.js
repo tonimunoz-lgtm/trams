@@ -1,6 +1,10 @@
 // app.js — núcleo de Trams. Bloque 1: login, subir una ruta (GPX/FIT),
 // y una lista básica para confirmar que la base compartida funciona.
 // La exploración completa (mapa, buscador, filtros) llega en el bloque 2.
+//
+// Textos de interfaz: todos pasan por I18n.t('clave') (ver js/i18n.js).
+// Los comentarios de código se quedan tal cual estaban (en castellano),
+// ya que no afectan a lo que ve la persona usuaria de la app.
 
 import { auth } from './firebase-config.js';
 import {
@@ -8,6 +12,8 @@ import {
   signOut, updateProfile
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import { DB } from './db.js';
+
+const { t, getLang, setLang } = window.I18n;
 
 function h(strings, ...values) {
   return strings.reduce((acc, str, i) => acc + str + (values[i] ?? ''), '');
@@ -19,6 +25,30 @@ function toast(msg) {
   el.textContent = msg;
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 3000);
+}
+
+// ============================================================
+// IDIOMA — botón fijo en pantalla, con persistencia en localStorage.
+// Por defecto: català.
+// ============================================================
+
+function setupLangToggle() {
+  const btn = document.getElementById('langToggle');
+  if (!btn) return;
+
+  function refreshLabel() {
+    btn.textContent = getLang() === 'ca' ? 'ES' : 'CA';
+    btn.title = t('lang.toggleTitle');
+    document.documentElement.lang = getLang();
+  }
+
+  refreshLabel();
+
+  btn.onclick = () => {
+    setLang(getLang() === 'ca' ? 'es' : 'ca');
+    refreshLabel();
+    router();
+  };
 }
 
 // ============================================================
@@ -67,14 +97,14 @@ function renderLogin() {
   $v.innerHTML = h`
     <div class="auth-box">
       <h1 class="auth-logo">🥾 Trams</h1>
-      <p class="auth-tag">Rutas compartidas, sin cuotas.</p>
+      <p class="auth-tag">${t('auth.tagline')}</p>
 
-      <input id="authName" placeholder="Tu nombre (solo para registro)" style="display:none;">
-      <input id="authEmail" type="email" placeholder="Email">
-      <input id="authPassword" type="password" placeholder="Contraseña">
+      <input id="authName" placeholder="${t('auth.namePlaceholder')}" style="display:none;">
+      <input id="authEmail" type="email" placeholder="${t('auth.emailPlaceholder')}">
+      <input id="authPassword" type="password" placeholder="${t('auth.passwordPlaceholder')}">
 
-      <button class="btn" id="btnAuthSubmit">Entrar</button>
-      <p class="auth-switch">¿No tienes cuenta? <b id="btnAuthSwitch">Regístrate</b></p>
+      <button class="btn" id="btnAuthSubmit">${t('auth.submitLogin')}</button>
+      <p class="auth-switch">${t('auth.noAccount')} <b id="btnAuthSwitch">${t('auth.switchToSignup')}</b></p>
       <p id="authError" style="color:#c0392b; font-size:13px;"></p>
     </div>
   `;
@@ -84,8 +114,8 @@ function renderLogin() {
   document.getElementById('btnAuthSwitch').onclick = () => {
     mode = mode === 'login' ? 'signup' : 'login';
     document.getElementById('authName').style.display = mode === 'signup' ? 'block' : 'none';
-    document.getElementById('btnAuthSubmit').textContent = mode === 'signup' ? 'Crear cuenta' : 'Entrar';
-    document.getElementById('btnAuthSwitch').textContent = mode === 'signup' ? 'Inicia sesión' : 'Regístrate';
+    document.getElementById('btnAuthSubmit').textContent = mode === 'signup' ? t('auth.submitSignup') : t('auth.submitLogin');
+    document.getElementById('btnAuthSwitch').textContent = mode === 'signup' ? t('auth.switchToLogin') : t('auth.switchToSignup');
   };
 
   document.getElementById('btnAuthSubmit').onclick = async () => {
@@ -115,11 +145,11 @@ function renderLogin() {
 function renderUpload() {
   const $v = document.getElementById('view');
   $v.innerHTML = h`
-    <div class="topbar"><h2>Subir ruta</h2></div>
+    <div class="topbar"><h2>${t('upload.title')}</h2></div>
 
     <div class="card">
       <div class="dropzone" id="dropzone">
-        <p><b>Toca para elegir un archivo</b><br>GPX (.fit llegará pronto)</p>
+        <p><b>${t('upload.dropzoneTitle')}</b><br>${t('upload.dropzoneSubtitle')}</p>
       </div>
       <input type="file" id="fileInput" accept=".gpx" style="display:none;">
       <div id="uploadStatus"></div>
@@ -134,14 +164,14 @@ function renderUpload() {
 
 async function handleFile(file) {
   const status = document.getElementById('uploadStatus');
-  status.innerHTML = `<div class="spinner"></div><p>Procesando ${file.name}…</p>`;
+  status.innerHTML = `<div class="spinner"></div><p>${t('upload.processing', { name: file.name })}</p>`;
 
   try {
     const { points, name, source } = await Parsers.parseFile(file);
-    if (points.length < 2) throw new Error('El archivo no contiene un trazado válido.');
+    if (points.length < 2) throw new Error(t('upload.invalidTrack'));
 
     const summary = Stats.computeSummary(points);
-    if (!summary) throw new Error('No se pudieron calcular las estadísticas de esta ruta.');
+    if (!summary) throw new Error(t('upload.statsError'));
 
     showPreview(summary, name, source);
 
@@ -156,34 +186,34 @@ function showPreview(summary, suggestedName, source, containerId = 'uploadStatus
 
   status.innerHTML = h`
     <div class="stat-grid">
-      <div class="stat"><b>${Stats.fmtDistance(summary.totalDistance)}</b><span>Distancia</span></div>
-      <div class="stat"><b>+${Math.round(summary.elevGain)} m</b><span>Desnivel +</span></div>
-      <div class="stat"><b>-${Math.round(summary.elevLoss)} m</b><span>Desnivel -</span></div>
-      <div class="stat"><b>${summary.hasTime ? Stats.fmtDuration(summary.duration) : '--'}</b><span>Duración</span></div>
+      <div class="stat"><b>${Stats.fmtDistance(summary.totalDistance)}</b><span>${t('stat.distance')}</span></div>
+      <div class="stat"><b>+${Math.round(summary.elevGain)} m</b><span>${t('stat.elevGain')}</span></div>
+      <div class="stat"><b>-${Math.round(summary.elevLoss)} m</b><span>${t('stat.elevLoss')}</span></div>
+      <div class="stat"><b>${summary.hasTime ? Stats.fmtDuration(summary.duration) : '--'}</b><span>${t('stat.duration')}</span></div>
     </div>
 
-    <label>Nombre de la ruta</label>
-    <input id="routeName" value="${suggestedName || ''}" placeholder="Ej. Cap de Creus por la costa">
+    <label>${t('form.routeName')}</label>
+    <input id="routeName" value="${suggestedName || ''}" placeholder="${t('form.routeNamePlaceholder')}">
 
-    <label>Tipo de actividad</label>
+    <label>${t('form.activityType')}</label>
     <select id="routeActivity">
-      <option value="hiking">Senderismo</option>
-      <option value="running">Correr</option>
-      <option value="cycling">Bici</option>
-      <option value="mtb">BTT</option>
-      <option value="other">Otro</option>
+      <option value="hiking">${t('activity.hiking')}</option>
+      <option value="running">${t('activity.running')}</option>
+      <option value="cycling">${t('activity.cycling')}</option>
+      <option value="mtb">${t('activity.mtb')}</option>
+      <option value="other">${t('activity.other')}</option>
     </select>
 
-    <label>Descripción (opcional)</label>
-    <textarea id="routeDesc" placeholder="Cómo es la ruta, puntos de interés, dificultad..."></textarea>
+    <label>${t('form.description')}</label>
+    <textarea id="routeDesc" placeholder="${t('form.descriptionPlaceholder')}"></textarea>
 
-    <button class="btn" id="btnSaveRoute" style="margin-top:12px;">Guardar en la base compartida</button>
+    <button class="btn" id="btnSaveRoute" style="margin-top:12px;">${t('form.saveShared')}</button>
   `;
 
   document.getElementById('btnSaveRoute').onclick = async () => {
     const btn = document.getElementById('btnSaveRoute');
     btn.disabled = true;
-    btn.textContent = 'Guardando…';
+    btn.textContent = t('form.saving');
 
     try {
       const storedPoints = Stats.downsampleForStorage(summary.points).map(p => ({
@@ -193,7 +223,7 @@ function showPreview(summary, suggestedName, source, containerId = 'uploadStatus
       }));
 
       const route = {
-        name: document.getElementById('routeName').value.trim() || 'Ruta sin nombre',
+        name: document.getElementById('routeName').value.trim() || t('form.unnamedRoute'),
         activityType: document.getElementById('routeActivity').value,
         description: document.getElementById('routeDesc').value.trim(),
         distance: summary.totalDistance,
@@ -205,14 +235,14 @@ function showPreview(summary, suggestedName, source, containerId = 'uploadStatus
       };
 
       const saved = await DB.saveRoute(route);
-      toast('¡Ruta guardada!');
+      toast(t('toast.routeSaved'));
       navigate(`#/route/${saved.id}`);
 
     } catch (e) {
       console.error(e);
-      toast(e.message || 'No se pudo guardar la ruta');
+      toast(e.message || t('toast.routeSaveError'));
       btn.disabled = false;
-      btn.textContent = 'Guardar en la base compartida';
+      btn.textContent = t('form.saveShared');
     }
   };
 }
@@ -224,13 +254,13 @@ function showPreview(summary, suggestedName, source, containerId = 'uploadStatus
 function renderRecord() {
   const $v = document.getElementById('view');
   $v.innerHTML = `
-    <div class="topbar"><a href="#/" class="icon-btn">‹</a><h2>Grabar en directo</h2></div>
+    <div class="topbar"><a href="#/" class="icon-btn">‹</a><h2>${t('record.title')}</h2></div>
 
     <div class="card" style="text-align:center; padding:28px 16px;">
       <div id="recDistance" style="font-size:38px; font-weight:800; line-height:1;">0.00 km</div>
       <div style="margin-top:14px;">
         <div id="recDuration" style="font-size:22px; font-weight:800;">0:00</div>
-        <span style="font-size:11px; color:#888;">TIEMPO</span>
+        <span style="font-size:11px; color:#888;">${t('record.time')}</span>
       </div>
     </div>
 
@@ -238,15 +268,14 @@ function renderRecord() {
 
     <label id="liveShareRow" style="display:flex; align-items:center; gap:8px; margin-top:12px; font-weight:400;">
       <input type="checkbox" id="liveShareCheck" style="width:auto; margin:0;">
-      📍 Compartir mi posición en directo (con quien tenga el enlace)
+      ${t('record.liveShareLabel')}
     </label>
     <div id="liveShareLink" style="display:none; margin-top:8px;"></div>
 
     <div id="recControls" style="display:flex; gap:10px; margin-top:14px;"></div>
 
     <p style="font-size:11px; color:#888; margin-top:12px; text-align:center; line-height:1.5;">
-      Mantén Trams en primer plano y la pantalla encendida durante toda la ruta —
-      si bloqueas el móvil o cambias de app, el GPS puede pausarse (limitación del navegador).
+      ${t('record.foregroundNote')}
     </p>
 
     <div id="recSaveArea" style="margin-top:16px;"></div>
@@ -296,7 +325,7 @@ function renderRecord() {
   async function handleStop() {
     const stats = Recorder.liveStats();
     if (stats.points.length < 2 || stats.distance < 50) {
-      if (confirm('Apenas hay recorrido grabado. ¿Descartar esta grabación?')) {
+      if (confirm(t('record.discardConfirm'))) {
         Recorder.discard();
         clearInterval(uiTimer);
         if (liveSessionId) DB.stopLiveTracking(liveSessionId).catch(() => {});
@@ -310,7 +339,7 @@ function renderRecord() {
     if (liveSessionId) DB.stopLiveTracking(liveSessionId).catch(() => {});
 
     const summary = Stats.computeSummary(points);
-    if (!summary) { toast('No se pudo procesar la grabación'); return; }
+    if (!summary) { toast(t('record.processError')); return; }
 
     document.getElementById('recControls').innerHTML = '';
     showPreview(summary, null, 'recorded', 'recSaveArea');
@@ -322,25 +351,25 @@ function renderRecord() {
 
     if (state === 'idle' || state === 'stopped') {
       document.getElementById('liveShareRow').style.display = 'flex';
-      controls.innerHTML = `<button class="btn" id="btnRecStart" style="width:100%;">▶ Empezar a grabar</button>`;
+      controls.innerHTML = `<button class="btn" id="btnRecStart" style="width:100%;">${t('record.start')}</button>`;
       document.getElementById('btnRecStart').onclick = async () => {
         try {
           await Recorder.start();
 
           const wantsShare = document.getElementById('liveShareCheck').checked;
           if (wantsShare) {
-            liveSessionId = await DB.startLiveTracking('una ruta en directo').catch(() => null);
+            liveSessionId = await DB.startLiveTracking(t('record.liveDefaultName')).catch(() => null);
             if (liveSessionId) {
               const url = `${window.location.origin}/#/live/${liveSessionId}`;
               const linkBox = document.getElementById('liveShareLink');
               linkBox.style.display = 'block';
               linkBox.innerHTML = h`
                 <div style="background:#F4F6F3; border-radius:8px; padding:8px; font-size:11px; word-break:break-all;">${url}</div>
-                <button class="btn secondary" id="btnCopyLiveLink" style="width:100%; margin-top:6px;">📋 Copiar enlace para compartir</button>
+                <button class="btn secondary" id="btnCopyLiveLink" style="width:100%; margin-top:6px;">${t('record.copyLink')}</button>
               `;
               document.getElementById('btnCopyLiveLink').onclick = async () => {
-                try { await navigator.clipboard.writeText(url); toast('Enlace copiado'); }
-                catch { toast('No se pudo copiar'); }
+                try { await navigator.clipboard.writeText(url); toast(t('toast.linkCopied')); }
+                catch { toast(t('toast.linkCopyError')); }
               };
             }
           }
@@ -349,20 +378,20 @@ function renderRecord() {
           renderControls();
           if (!uiTimer) uiTimer = setInterval(refreshUI, 1000);
         } catch (e) {
-          toast(e.message || 'No se pudo acceder a la ubicación. Revisa los permisos de este sitio.');
+          toast(e.message || t('record.geoError'));
         }
       };
     } else if (state === 'recording') {
       controls.innerHTML = `
-        <button class="btn secondary" id="btnRecPause" style="flex:1;">⏸ Pausar</button>
-        <button class="btn" id="btnRecStop" style="flex:1; background:#c0392b;">⏹ Finalizar</button>
+        <button class="btn secondary" id="btnRecPause" style="flex:1;">${t('record.pause')}</button>
+        <button class="btn" id="btnRecStop" style="flex:1; background:#c0392b;">${t('record.stop')}</button>
       `;
       document.getElementById('btnRecPause').onclick = () => { Recorder.pause(); renderControls(); };
       document.getElementById('btnRecStop').onclick = handleStop;
     } else if (state === 'paused') {
       controls.innerHTML = `
-        <button class="btn" id="btnRecResume" style="flex:1;">▶ Reanudar</button>
-        <button class="btn secondary" id="btnRecStop" style="flex:1;">⏹ Finalizar</button>
+        <button class="btn" id="btnRecResume" style="flex:1;">${t('record.resume')}</button>
+        <button class="btn secondary" id="btnRecStop" style="flex:1;">${t('record.stop')}</button>
       `;
       document.getElementById('btnRecResume').onclick = async () => { await Recorder.resume(); renderControls(); };
       document.getElementById('btnRecStop').onclick = handleStop;
@@ -380,13 +409,13 @@ function renderRecord() {
 function renderLiveView(sessionId) {
   const $v = document.getElementById('view');
   $v.innerHTML = `
-    <div class="topbar"><h2>🥾 Trams · En directo</h2></div>
+    <div class="topbar"><h2>${t('live.title')}</h2></div>
     <div class="card" id="liveStatusCard"><div class="spinner"></div></div>
     <div class="map-box" id="liveMap"></div>
   `;
 
   if (!sessionId) {
-    document.getElementById('liveStatusCard').innerHTML = '<p style="color:#c0392b;">Enlace no válido.</p>';
+    document.getElementById('liveStatusCard').innerHTML = `<p style="color:#c0392b;">${t('live.invalidLink')}</p>`;
     return;
   }
 
@@ -420,12 +449,12 @@ function renderLiveStatus(data) {
   if (!card) return;
 
   if (!data) {
-    card.innerHTML = '<p style="color:#888;">Este enlace ya no está disponible.</p>';
+    card.innerHTML = `<p style="color:#888;">${t('live.unavailable')}</p>`;
     return;
   }
 
   if (!data.active) {
-    card.innerHTML = h`<p><b>${data.userName}</b> ha terminado de compartir su posición (${data.routeName}).</p>`;
+    card.innerHTML = h`<p>${t('live.finished', { name: `<b>${data.userName}</b>`, routeName: data.routeName })}</p>`;
     return;
   }
 
@@ -435,10 +464,10 @@ function renderLiveStatus(data) {
   const stale = secondsAgo != null && secondsAgo > 120;
 
   card.innerHTML = h`
-    <p><b>${data.userName}</b> está haciendo "${data.routeName}" ahora mismo. 🟢</p>
+    <p>${t('live.active', { name: `<b>${data.userName}</b>`, routeName: data.routeName })}</p>
     <p style="font-size:12px; color:${stale ? '#c0392b' : '#888'};">
-      ${secondsAgo != null ? `Última actualización hace ${secondsAgo}s` : 'Esperando la primera posición…'}
-      ${stale ? ' — puede que haya perdido la conexión' : ''}
+      ${secondsAgo != null ? t('live.updatedAgo', { n: secondsAgo }) : t('live.waitingFirst')}
+      ${stale ? t('live.staleNote') : ''}
     </p>
   `;
 }
@@ -448,10 +477,12 @@ function renderLiveStatus(data) {
 // EXPLORAR RUTAS — buscador, filtro por tipo, mapa en miniatura
 // ============================================================
 
-const ACTIVITY_LABELS = {
-  hiking: '🥾 Senderismo', running: '🏃 Correr', cycling: '🚴 Bici',
-  mtb: '🚵 BTT', other: '📍 Otro'
-};
+function activityLabels() {
+  return {
+    hiking: t('activity.hiking'), running: t('activity.running'), cycling: t('activity.cycling'),
+    mtb: t('activity.mtb'), other: t('activity.other')
+  };
+}
 
 let EXPLORE_FILTER = 'all';
 let ALL_ROUTES_CACHE = [];
@@ -460,16 +491,16 @@ async function renderList() {
   const $v = document.getElementById('view');
   $v.innerHTML = `
     <div class="topbar">
-      <h2>🥾 Trams</h2>
-      <button class="icon-btn" id="btnQuickSync" title="Actualizar desde Garmin">↻</button>
-      <a href="#/connect" class="icon-btn" title="Conectar mi reloj">⌚</a>
+      <h2>${t('list.title')}</h2>
+      <button class="icon-btn" id="btnQuickSync" title="${t('list.syncTitle')}">↻</button>
+      <a href="#/connect" class="icon-btn" title="${t('list.connectTitle')}">⌚</a>
       <button class="icon-btn" id="btnLogout">⏻</button>
     </div>
-    <a href="#/upload" class="btn" style="display:block; text-align:center; margin-bottom:10px;">+ Subir una ruta</a>
-    <a href="#/record" class="btn secondary" style="display:block; text-align:center; margin-bottom:10px;">🔴 Grabar en directo</a>
-    <a href="#/import-osm" class="btn secondary" style="display:block; text-align:center; margin-bottom:16px;">🗺️ Importar de OpenStreetMap</a>
+    <a href="#/upload" class="btn" style="display:block; text-align:center; margin-bottom:10px;">${t('list.uploadBtn')}</a>
+    <a href="#/record" class="btn secondary" style="display:block; text-align:center; margin-bottom:10px;">${t('list.recordBtn')}</a>
+    <a href="#/import-osm" class="btn secondary" style="display:block; text-align:center; margin-bottom:16px;">${t('list.importOsmBtn')}</a>
 
-    <input id="searchInput" placeholder="Buscar por nombre…" style="margin-bottom:10px;">
+    <input id="searchInput" placeholder="${t('list.searchPlaceholder')}" style="margin-bottom:10px;">
 
     <div id="filterChips" class="chips-row"></div>
 
@@ -498,17 +529,17 @@ function setupQuickSync() {
       const idToken = await auth.currentUser.getIdToken();
       const resp = await fetch('/api/trigger-sync', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}`, 'X-Lang': getLang() },
         body: JSON.stringify({ days: 1 })
       });
       if (!resp.ok) {
         const data = await resp.json().catch(() => ({}));
         throw new Error(data.error || `Error ${resp.status}`);
       }
-      toast('Sincronización lanzada — tardará unos 20-40s');
+      toast(t('toast.syncTriggered'));
     } catch (e) {
       console.error(e);
-      toast(e.message || 'No se pudo lanzar la sincronización');
+      toast(e.message || t('toast.syncError'));
     } finally {
       btn.textContent = original;
       setTimeout(() => { btn.disabled = false; }, 8000);
@@ -525,7 +556,19 @@ function setupQuickSync() {
 // punto (vía Overpass API, gratis y pública) y los deja importar con
 // un clic. Los senderos largos suelen venir troceados en varios pedazos
 // en OpenStreetMap — los cosemos en un trazado continuo aquí mismo.
+//
+// OJO — margen de longitud: Overpass encuentra una relación de ruta si
+// CUALQUIERA de sus nodos cae dentro del radio pedido, aunque la ruta
+// completa (p.ej. un GR de 200km) recorra medio país. Por eso antes
+// aparecían resultados kilométricamente enormes con un radio de 5-10km.
+// Como no cortamos el trazado (solo lo cosemos entero), aplicamos un
+// margen razonable: descartamos relaciones cuya longitud total supere
+// el radio pedido multiplicado por OSM_LENGTH_MARGIN. No es un filtro
+// exacto por "cerca del punto", pero evita que salgan rutas que se van
+// muchísimo más allá de lo buscado.
 // ============================================================
+
+const OSM_LENGTH_MARGIN = 3;
 
 function haversineSimple(a, b) {
   const R = 6371000;
@@ -549,27 +592,29 @@ function stitchSegments(segments) {
   return path;
 }
 
-const OSM_ROUTE_TYPES = {
-  hiking: { osmValue: 'hiking', label: '🥾 Senderismo' },
-  cycling: { osmValue: 'bicycle', label: '🚴 Bici' },
-  mtb: { osmValue: 'mtb', label: '🚵 BTT' }
-};
+function osmRouteTypes() {
+  return {
+    hiking: { osmValue: 'hiking', label: t('activity.hiking') },
+    cycling: { osmValue: 'bicycle', label: t('activity.cycling') },
+    mtb: { osmValue: 'mtb', label: t('activity.mtb') }
+  };
+}
 
 async function geocodePlace(placeName) {
   const resp = await fetch('/api/osm-search', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Lang': getLang() },
     body: JSON.stringify({ action: 'geocode', place: placeName })
   });
   const data = await resp.json();
-  if (!resp.ok) throw new Error(data.error || 'No se pudo buscar ese lugar.');
+  if (!resp.ok) throw new Error(data.error || t('osm.needPlace'));
   return data;
 }
 
 async function searchOsmRoutes(lat, lon, radiusM, osmValue) {
   const resp = await fetch('/api/osm-search', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Lang': getLang() },
     body: JSON.stringify({ lat, lon, radius: radiusM, osmValue })
   });
   const data = await resp.json();
@@ -582,6 +627,8 @@ async function searchOsmRoutes(lat, lon, radiusM, osmValue) {
     else if (el.type === 'relation') relations.push(el);
   }
 
+  const radiusNum = Number(radiusM) || 0;
+
   return relations.map(rel => {
     const wayMembers = rel.members.filter(m => m.type === 'way');
     const segments = wayMembers.map(m => {
@@ -592,41 +639,46 @@ async function searchOsmRoutes(lat, lon, radiusM, osmValue) {
     const points = stitchSegments(segments);
     return {
       osmId: rel.id,
-      name: (rel.tags && rel.tags.name) || `Sendero sin nombre (#${rel.id})`,
+      name: (rel.tags && rel.tags.name) || `#${rel.id}`,
       points
     };
-  }).filter(r => r.points.length > 5); // descartamos trozos demasiado pequeños/rotos
+  }).filter(r => {
+    if (r.points.length <= 5) return false; // descartamos trozos demasiado pequeños/rotos
+    if (!radiusNum) return true;
+    const totalLength = Stats.cumulativeDistances(r.points).pop() || 0;
+    // Descarta rutas que se van mucho más allá del radio pedido (ver nota arriba).
+    return totalLength <= radiusNum * OSM_LENGTH_MARGIN;
+  });
 }
 
 async function renderImportOsm() {
   const $v = document.getElementById('view');
   $v.innerHTML = h`
-    <div class="topbar"><a href="#/" class="icon-btn">‹</a><h2>Importar de OpenStreetMap</h2></div>
+    <div class="topbar"><a href="#/" class="icon-btn">‹</a><h2>${t('osm.title')}</h2></div>
 
     <p style="font-size:12px; color:#888; margin-bottom:10px;">
-      Busca senderos y rutas reales, con nombre oficial, cerca de un lugar — vienen del mapa
-      colaborativo OpenStreetMap, gratis y sin necesidad de cuenta en ningún sitio externo.
+      ${t('osm.description')}
     </p>
 
-    <label>Buscar cerca de</label>
-    <input id="osmPlace" placeholder="Ej. Llançà, Cap de Creus...">
-    <button class="btn secondary" id="btnUseMyLocation" style="width:100%; margin-bottom:10px;">📍 Usar mi ubicación actual</button>
+    <label>${t('osm.searchNear')}</label>
+    <input id="osmPlace" placeholder="${t('osm.placePlaceholder')}">
+    <button class="btn secondary" id="btnUseMyLocation" style="width:100%; margin-bottom:10px;">${t('osm.useLocation')}</button>
 
-    <label>Tipo</label>
+    <label>${t('osm.type')}</label>
     <select id="osmType">
-      <option value="hiking">🥾 Senderismo</option>
-      <option value="cycling">🚴 Bici</option>
-      <option value="mtb">🚵 BTT</option>
+      <option value="hiking">${t('activity.hiking')}</option>
+      <option value="cycling">${t('activity.cycling')}</option>
+      <option value="mtb">${t('activity.mtb')}</option>
     </select>
 
-    <label>Radio de búsqueda</label>
+    <label>${t('osm.radius')}</label>
     <select id="osmRadius">
       <option value="5000">5 km</option>
       <option value="10000" selected>10 km</option>
       <option value="20000">20 km</option>
     </select>
 
-    <button class="btn" id="btnSearchOsm" style="width:100%; margin-top:6px;">Buscar rutas</button>
+    <button class="btn" id="btnSearchOsm" style="width:100%; margin-top:6px;">${t('osm.searchBtn')}</button>
 
     <div id="osmResults" style="margin-top:16px;"></div>
   `;
@@ -634,14 +686,14 @@ async function renderImportOsm() {
   let searchCenter = null;
 
   document.getElementById('btnUseMyLocation').onclick = () => {
-    if (!('geolocation' in navigator)) { toast('Este navegador no da acceso a la ubicación.'); return; }
+    if (!('geolocation' in navigator)) { toast(t('osm.noGeo')); return; }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         searchCenter = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-        document.getElementById('osmPlace').value = '(tu ubicación actual)';
-        toast('Ubicación detectada');
+        document.getElementById('osmPlace').value = t('osm.currentLocationLabel');
+        toast(t('toast.locationDetected'));
       },
-      () => toast('No se pudo obtener tu ubicación.')
+      () => toast(t('toast.locationError'))
     );
   };
 
@@ -656,14 +708,14 @@ async function renderImportOsm() {
     try {
       let center = searchCenter;
       if (!center) {
-        if (!placeText) throw new Error('Escribe un lugar o usa tu ubicación actual.');
+        if (!placeText) throw new Error(t('osm.needPlace'));
         center = await geocodePlace(placeText);
       }
 
-      const found = await searchOsmRoutes(center.lat, center.lon, radius, OSM_ROUTE_TYPES[activityKey].osmValue);
+      const found = await searchOsmRoutes(center.lat, center.lon, radius, osmRouteTypes()[activityKey].osmValue);
 
       if (!found.length) {
-        results.innerHTML = '<p style="color:#888; text-align:center;">No se ha encontrado ninguna ruta de este tipo por aquí.</p>';
+        results.innerHTML = `<p style="color:#888; text-align:center;">${t('osm.noResults')}</p>`;
         return;
       }
 
@@ -672,8 +724,8 @@ async function renderImportOsm() {
         return h`
           <div class="card">
             <b>${r.name}</b>
-            <p style="font-size:12px; color:#888;">${Stats.fmtDistance(dist)} · ${r.points.length} puntos</p>
-            <button class="btn secondary" data-import="${i}" style="width:100%;">Importar a Trams</button>
+            <p style="font-size:12px; color:#888;">${Stats.fmtDistance(dist)} · ${t('osm.points', { n: r.points.length })}</p>
+            <button class="btn secondary" data-import="${i}" style="width:100%;">${t('osm.importBtn')}</button>
           </div>
         `;
       }).join('');
@@ -682,10 +734,10 @@ async function renderImportOsm() {
         btn.onclick = async () => {
           const r = found[+btn.dataset.import];
           btn.disabled = true;
-          btn.textContent = 'Importando…';
+          btn.textContent = t('osm.importing');
           try {
             const summary = Stats.computeSummary(r.points);
-            if (!summary) throw new Error('Esta ruta no tiene un trazado válido.');
+            if (!summary) throw new Error(t('osm.invalidTrack'));
             const storedPoints = Stats.downsampleForStorage(summary.points).map(p => ({
               lat: +p.lat.toFixed(6), lon: +p.lon.toFixed(6),
               ele: p.ele != null ? Math.round(p.ele) : null
@@ -693,7 +745,7 @@ async function renderImportOsm() {
             const saved = await DB.saveRoute({
               name: r.name,
               activityType: activityKey,
-              description: 'Importada de OpenStreetMap.',
+              description: t('osm.importedDesc'),
               distance: summary.totalDistance,
               elevGain: summary.elevGain,
               elevLoss: summary.elevLoss,
@@ -701,12 +753,12 @@ async function renderImportOsm() {
               source: 'openstreetmap',
               points: storedPoints
             });
-            toast('¡Importada!');
+            toast(t('toast.imported'));
             navigate(`#/route/${saved.id}`);
           } catch (e) {
-            toast(e.message || 'No se pudo importar');
+            toast(e.message || t('toast.importError'));
             btn.disabled = false;
-            btn.textContent = 'Importar a Trams';
+            btn.textContent = t('osm.importBtn');
           }
         };
       });
@@ -721,10 +773,10 @@ async function renderImportOsm() {
 async function renderConnect() {
   const $v = document.getElementById('view');
   $v.innerHTML = `
-    <div class="topbar"><a href="#/" class="icon-btn">‹</a><h2>Conectar mi Garmin</h2></div>
+    <div class="topbar"><a href="#/" class="icon-btn">‹</a><h2>${t('connect.garminTitle')}</h2></div>
     <div class="card" id="garminCard"><div class="spinner"></div></div>
 
-    <div class="topbar" style="margin-top:20px;"><h2>Enviar rutas al reloj</h2></div>
+    <div class="topbar" style="margin-top:20px;"><h2>${t('connect.sendTitle')}</h2></div>
     <div class="card" id="rwgpsCard"><div class="spinner"></div></div>
   `;
 
@@ -733,20 +785,18 @@ async function renderConnect() {
 
   card.innerHTML = h`
     <p style="font-size:12px; color:#888; margin-bottom:10px;">
-      Consigue tu clave personal en <b>intervals.icu → Ajustes → Developer Settings → API Key</b>, y pégala aquí.
-      Es solo tuya — nadie más puede verla ni usarla. Tus actividades de correr, andar o bici se importarán
-      automáticamente como rutas tuyas en Trams.
+      ${t('connect.garminDesc')}
     </p>
 
-    <label>Tu clave de Intervals.icu</label>
-    <input id="garminApiKey" type="password" placeholder="${existing ? '•••••••••••••• (ya guardada)' : 'Pega tu clave aquí'}">
+    <label>${t('connect.apiKeyLabel')}</label>
+    <input id="garminApiKey" type="password" placeholder="${existing ? t('connect.apiKeySaved') : t('connect.apiKeyPlaceholder')}">
 
-    <label>Tu Athlete ID (déjalo en "0" si es tu propia cuenta)</label>
+    <label>${t('connect.athleteIdLabel')}</label>
     <input id="garminAthleteId" value="${existing ? existing.intervalsAthleteId : '0'}">
 
     <div style="display:flex; gap:8px; margin-top:6px;">
-      <button class="btn" id="btnSaveGarmin" style="flex:1;">${existing ? 'Actualizar clave' : 'Guardar'}</button>
-      ${existing ? '<button class="btn secondary" id="btnRemoveGarmin">Desconectar</button>' : ''}
+      <button class="btn" id="btnSaveGarmin" style="flex:1;">${existing ? t('connect.updateKey') : t('connect.save')}</button>
+      ${existing ? `<button class="btn secondary" id="btnRemoveGarmin">${t('connect.disconnect')}</button>` : ''}
     </div>
     <p id="garminMsg" style="font-size:12px; margin-top:8px;"></p>
   `;
@@ -755,23 +805,23 @@ async function renderConnect() {
     const key = document.getElementById('garminApiKey').value.trim();
     const athleteId = document.getElementById('garminAthleteId').value.trim() || '0';
     const msg = document.getElementById('garminMsg');
-    if (!key) { msg.style.color = '#c0392b'; msg.textContent = 'Pega tu clave primero.'; return; }
+    if (!key) { msg.style.color = '#c0392b'; msg.textContent = t('connect.pasteFirst'); return; }
     try {
       await DB.saveGarminIntegration({ intervalsApiKey: key, intervalsAthleteId: athleteId });
-      toast('Garmin conectado');
+      toast(t('toast.garminConnected'));
       renderConnect();
     } catch (e) {
       msg.style.color = '#c0392b';
-      msg.textContent = e.message || 'No se pudo guardar.';
+      msg.textContent = e.message || t('connect.saveError');
     }
   };
 
   const btnRemove = document.getElementById('btnRemoveGarmin');
   if (btnRemove) {
     btnRemove.onclick = async () => {
-      if (!confirm('¿Desconectar Garmin?')) return;
+      if (!confirm(t('connect.disconnectConfirm'))) return;
       await DB.deleteGarminIntegration();
-      toast('Desconectado');
+      toast(t('toast.disconnected'));
       renderConnect();
     };
   }
@@ -782,15 +832,13 @@ async function renderConnect() {
 
   rwCard.innerHTML = h`
     <p style="font-size:12px; color:#888; margin-bottom:10px;">
-      Con esto, cada ruta de Trams podrá "Enviarse al reloj": pasa por tu cuenta de RideWithGPS
-      (gratis, sin tarjeta) y de ahí a tu Garmin, si tienes su sincronización activada en
-      <a href="https://ridewithgps.com" target="_blank">ridewithgps.com</a> → Ajustes → Conexiones.
+      ${t('rwgps.desc')}
     </p>
-    <label>Email de RideWithGPS</label>
-    <input id="rwEmail" type="email" placeholder="${existingRw ? '•••• (ya conectado)' : 'tu@email.com'}">
-    <label>Contraseña</label>
-    <input id="rwPassword" type="password" placeholder="Solo se usa una vez, no se guarda">
-    <button class="btn" id="btnSaveRw" style="width:100%; margin-top:6px;">${existingRw ? 'Reconectar' : 'Conectar RideWithGPS'}</button>
+    <label>${t('rwgps.emailLabel')}</label>
+    <input id="rwEmail" type="email" placeholder="${existingRw ? t('rwgps.emailSaved') : t('rwgps.emailPlaceholder')}">
+    <label>${t('rwgps.passwordLabel')}</label>
+    <input id="rwPassword" type="password" placeholder="${t('rwgps.passwordPlaceholder')}">
+    <button class="btn" id="btnSaveRw" style="width:100%; margin-top:6px;">${existingRw ? t('rwgps.reconnect') : t('rwgps.connect')}</button>
     <p id="rwMsg" style="font-size:12px; margin-top:8px;"></p>
   `;
 
@@ -798,33 +846,33 @@ async function renderConnect() {
     const email = document.getElementById('rwEmail').value.trim();
     const password = document.getElementById('rwPassword').value;
     const msg = document.getElementById('rwMsg');
-    if (!email || !password) { msg.style.color = '#c0392b'; msg.textContent = 'Rellena email y contraseña.'; return; }
+    if (!email || !password) { msg.style.color = '#c0392b'; msg.textContent = t('rwgps.fillFields'); return; }
 
     msg.style.color = '#888';
-    msg.textContent = 'Conectando…';
+    msg.textContent = t('rwgps.connecting');
     try {
       const idToken = await auth.currentUser.getIdToken();
       const resp = await fetch('/api/ridewithgps-connect', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}`, 'X-Lang': getLang() },
         body: JSON.stringify({ email, password })
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error || `Error ${resp.status}`);
 
       await DB.saveRideWithGPSIntegration({ authToken: data.authToken, rwgpsUserId: data.userId });
-      toast('RideWithGPS conectado');
+      toast(t('toast.rwgpsConnected'));
       renderConnect();
     } catch (e) {
       msg.style.color = '#c0392b';
-      msg.textContent = e.message || 'No se pudo conectar.';
+      msg.textContent = e.message || t('rwgps.connectError');
     }
   };
 }
 
 function renderFilterChips() {
   const chipsEl = document.getElementById('filterChips');
-  const options = [['all', 'Todos'], ['favorites', '★ Favoritos'], ...Object.entries(ACTIVITY_LABELS)];
+  const options = [['all', t('filter.all')], ['favorites', t('filter.favorites')], ...Object.entries(activityLabels())];
   chipsEl.innerHTML = options.map(([key, label]) => h`
     <button class="chip ${EXPLORE_FILTER === key ? 'chip-active' : ''}" data-filter="${key}">${label}</button>
   `).join('');
@@ -857,7 +905,7 @@ async function loadAndRenderRoutes() {
     renderFilteredRoutes();
   } catch (e) {
     console.error(e);
-    list.innerHTML = `<p style="color:#c0392b;">No se pudieron cargar las rutas.</p>`;
+    list.innerHTML = `<p style="color:#c0392b;">${t('list.loadError')}</p>`;
   }
 }
 
@@ -869,19 +917,21 @@ function renderFilteredRoutes() {
     : ALL_ROUTES_CACHE;
 
   if (!routes.length) {
-    list.innerHTML = `<p style="color:#888; text-align:center;">${search ? 'Ninguna ruta coincide.' : 'Todavía no hay rutas — ¡sé el primero!'}</p>`;
+    list.innerHTML = `<p style="color:#888; text-align:center;">${search ? t('list.noMatch') : t('list.empty')}</p>`;
     return;
   }
+
+  const labels = activityLabels();
 
   list.innerHTML = routes.map(r => h`
     <a href="#/route/${r.id}" class="card route-card">
       <div class="route-map" id="mini-${r.id}"></div>
       <b>${r.name}</b>
-      <p style="font-size:12px; color:#888;">${ACTIVITY_LABELS[r.activityType] || ''} · Subida por ${r.createdByName}</p>
+      <p style="font-size:12px; color:#888;">${labels[r.activityType] || ''} · ${t('list.uploadedBy', { name: r.createdByName })}</p>
       <div class="stat-grid cols-3">
-        <div class="stat"><b>${Stats.fmtDistance(r.distance)}</b><span>Distancia</span></div>
-        <div class="stat"><b>+${Math.round(r.elevGain)} m</b><span>Desnivel</span></div>
-        <div class="stat"><b>${r.duration ? Stats.fmtDuration(r.duration) : '--'}</b><span>Duración</span></div>
+        <div class="stat"><b>${Stats.fmtDistance(r.distance)}</b><span>${t('stat.distance')}</span></div>
+        <div class="stat"><b>+${Math.round(r.elevGain)} m</b><span>${t('stat.elevGain')}</span></div>
+        <div class="stat"><b>${r.duration ? Stats.fmtDuration(r.duration) : '--'}</b><span>${t('stat.duration')}</span></div>
       </div>
     </a>
   `).join('');
@@ -912,18 +962,19 @@ async function renderRouteDetail(id) {
 
   const route = await DB.getRoute(id);
   if (!route) {
-    $v.innerHTML = `<p>Ruta no encontrada.</p><a href="#/">Volver</a>`;
+    $v.innerHTML = `<p>${t('detail.notFound')}</p><a href="#/">${t('detail.back')}</a>`;
     return;
   }
 
   const isMine = CURRENT_USER && route.createdBy === CURRENT_USER.uid;
+  const labels = activityLabels();
 
   $v.innerHTML = h`
     <div class="topbar">
       <a href="#/" class="icon-btn">‹</a>
       <h2 style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;">${route.name}</h2>
       ${isMine ? '<button class="icon-btn" id="btnEditRoute" title="Editar">✏️</button>' : ''}
-      ${isMine ? '<button class="icon-btn" id="btnDeleteRoute" title="Borrar">🗑</button>' : ''}
+      ${isMine ? '<button class="icon-btn" id="btnDeleteRoute" title="Esborrar">🗑</button>' : ''}
       <button class="icon-btn" id="btnFavorite">☆</button>
     </div>
 
@@ -931,38 +982,38 @@ async function renderRouteDetail(id) {
     <div id="editRouteBox"></div>
 
     <div class="card">
-      <p style="font-size:12px; color:#888;">${ACTIVITY_LABELS[route.activityType] || ''} · Subida por ${route.createdByName}</p>
+      <p style="font-size:12px; color:#888;">${labels[route.activityType] || ''} · ${t('detail.uploadedBy', { name: route.createdByName })}</p>
       ${route.description ? `<p>${route.description}</p>` : ''}
 
       <div class="stat-grid">
-        <div class="stat"><b>${Stats.fmtDistance(route.distance)}</b><span>Distancia</span></div>
-        <div class="stat"><b>+${Math.round(route.elevGain)} m</b><span>Desnivel +</span></div>
-        <div class="stat"><b>-${Math.round(route.elevLoss)} m</b><span>Desnivel -</span></div>
-        <div class="stat"><b>${route.duration ? Stats.fmtDuration(route.duration) : '--'}</b><span>Duración</span></div>
+        <div class="stat"><b>${Stats.fmtDistance(route.distance)}</b><span>${t('stat.distance')}</span></div>
+        <div class="stat"><b>+${Math.round(route.elevGain)} m</b><span>${t('stat.elevGain')}</span></div>
+        <div class="stat"><b>-${Math.round(route.elevLoss)} m</b><span>${t('stat.elevLoss')}</span></div>
+        <div class="stat"><b>${route.duration ? Stats.fmtDuration(route.duration) : '--'}</b><span>${t('stat.duration')}</span></div>
       </div>
 
-      <button class="btn secondary" id="btnDownloadGPX" style="margin-top:12px; width:100%;">⬇ Descargar GPX</button>
-      <button class="btn" id="btnSendToWatch" style="margin-top:8px; width:100%;">⌚ Enviar al reloj</button>
+      <button class="btn secondary" id="btnDownloadGPX" style="margin-top:12px; width:100%;">${t('detail.downloadGpx')}</button>
+      <button class="btn" id="btnSendToWatch" style="margin-top:8px; width:100%;">${t('detail.sendToWatch')}</button>
     </div>
 
-    <div class="section-title">Perfil de elevación</div>
+    <div class="section-title">${t('detail.elevationProfile')}</div>
     <div class="card">
       <canvas id="elevChart" height="140"></canvas>
     </div>
 
-    <div class="section-title">Fotos</div>
+    <div class="section-title">${t('detail.photos')}</div>
     <div class="card">
       <div id="photosGallery" style="display:flex; gap:8px; overflow-x:auto; padding-bottom:4px;"></div>
       <input type="file" id="photoInput" accept="image/*" style="display:none;">
-      <button class="btn secondary" id="btnAddPhoto" style="margin-top:10px; width:100%;">📷 Añadir foto</button>
+      <button class="btn secondary" id="btnAddPhoto" style="margin-top:10px; width:100%;">${t('detail.addPhoto')}</button>
     </div>
 
-    <div class="section-title">Comentarios</div>
+    <div class="section-title">${t('detail.comments')}</div>
     <div class="card">
       <div id="commentsList"></div>
       <div style="display:flex; gap:8px; margin-top:10px;">
-        <input id="commentInput" placeholder="Escribe un comentario…" maxlength="500" style="flex:1; margin-bottom:0;">
-        <button class="btn" id="btnPostComment" style="width:auto;">Enviar</button>
+        <input id="commentInput" placeholder="${t('detail.commentPlaceholder')}" maxlength="500" style="flex:1; margin-bottom:0;">
+        <button class="btn" id="btnPostComment" style="width:auto;">${t('detail.send')}</button>
       </div>
     </div>
   `;
@@ -983,12 +1034,12 @@ async function renderRouteDetail(id) {
     const btn = document.getElementById('btnSendToWatch');
     btn.disabled = true;
     const original = btn.textContent;
-    btn.textContent = 'Enviando…';
+    btn.textContent = t('detail.sending');
     try {
       const idToken = await auth.currentUser.getIdToken();
       const resp = await fetch('/api/send-to-ridewithgps', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}`, 'X-Lang': getLang() },
         body: JSON.stringify({ routeId: route.id })
       });
       const data = await resp.json();
@@ -1000,15 +1051,15 @@ async function renderRouteDetail(id) {
         route.rideWithGpsUrl = data.routeUrl;
         DB.updateRoute(route.id, { rideWithGpsUrl: data.routeUrl }).catch(() => {});
 
-        if (confirm('¡Enviada a RideWithGPS! ¿Abrirla ahora para darle a "Enviar al reloj"?')) {
+        if (confirm(t('detail.sentConfirm'))) {
           window.open(data.routeUrl, '_blank');
         }
       } else {
-        toast('¡Enviada a RideWithGPS! Búscala en tu cuenta para mandarla al reloj.');
+        toast(t('toast.sentNoUrl'));
       }
     } catch (e) {
       console.error(e);
-      alert(e.message || 'No se pudo enviar la ruta.');
+      alert(e.message || t('detail.sendError'));
     } finally {
       btn.disabled = false;
       btn.textContent = original;
@@ -1023,24 +1074,24 @@ async function renderRouteDetail(id) {
     document.getElementById('btnEditRoute').onclick = () => showEditRouteForm(route);
     document.getElementById('btnDeleteRoute').onclick = async () => {
       const confirmMsg = route.rideWithGpsUrl
-        ? `¿Borrar "${route.name}"? No se puede deshacer.`
-        : `¿Borrar "${route.name}"? No se puede deshacer. (Si la enviaste a RideWithGPS, esa copia no se borra sola — tendrías que quitarla allí a mano si quieres.)`;
+        ? t('detail.deleteConfirmSimple', { name: route.name })
+        : t('detail.deleteConfirmRwgps', { name: route.name });
       if (!confirm(confirmMsg)) return;
 
       try {
         await DB.deleteRoute(route.id);
-        toast('Ruta borrada de Trams');
+        toast(t('toast.routeDeleted'));
 
         // Si la enviamos alguna vez a RideWithGPS, ofrecemos ir directos
         // a esa ruta ahí para borrarla también — mismo patrón que al
         // enviarla al reloj.
-        if (route.rideWithGpsUrl && confirm('También está en tu cuenta de RideWithGPS. ¿Abrirla ahí para borrarla también?')) {
+        if (route.rideWithGpsUrl && confirm(t('detail.deleteRwgpsConfirm'))) {
           window.open(route.rideWithGpsUrl, '_blank');
         }
 
         navigate('#/');
       } catch (e) {
-        toast(e.message || 'No se pudo borrar (solo el autor puede)');
+        toast(e.message || t('detail.deleteError'));
       }
     };
   }
@@ -1048,21 +1099,22 @@ async function renderRouteDetail(id) {
 
 function showEditRouteForm(route) {
   const box = document.getElementById('editRouteBox');
+  const labels = activityLabels();
   box.innerHTML = h`
     <div class="card">
-      <label>Nombre</label>
+      <label>${t('edit.name')}</label>
       <input id="editName" value="${route.name || ''}">
-      <label>Tipo de actividad</label>
+      <label>${t('edit.activityType')}</label>
       <select id="editActivity">
-        ${Object.entries(ACTIVITY_LABELS).map(([key, label]) =>
+        ${Object.entries(labels).map(([key, label]) =>
           `<option value="${key}" ${route.activityType === key ? 'selected' : ''}>${label}</option>`
         ).join('')}
       </select>
-      <label>Descripción</label>
+      <label>${t('edit.description')}</label>
       <textarea id="editDesc">${route.description || ''}</textarea>
       <div style="display:flex; gap:8px;">
-        <button class="btn" id="btnSaveEdit" style="flex:1;">Guardar cambios</button>
-        <button class="btn secondary" id="btnCancelEdit">Cancelar</button>
+        <button class="btn" id="btnSaveEdit" style="flex:1;">${t('edit.save')}</button>
+        <button class="btn secondary" id="btnCancelEdit">${t('edit.cancel')}</button>
       </div>
     </div>
   `;
@@ -1072,19 +1124,19 @@ function showEditRouteForm(route) {
   document.getElementById('btnSaveEdit').onclick = async () => {
     const btn = document.getElementById('btnSaveEdit');
     btn.disabled = true;
-    btn.textContent = 'Guardando…';
+    btn.textContent = t('edit.saving');
     try {
       await DB.updateRoute(route.id, {
         name: document.getElementById('editName').value.trim() || route.name,
         activityType: document.getElementById('editActivity').value,
         description: document.getElementById('editDesc').value.trim()
       });
-      toast('Ruta actualizada');
+      toast(t('toast.routeUpdated'));
       renderRouteDetail(route.id);
     } catch (e) {
-      toast(e.message || 'No se pudo guardar');
+      toast(e.message || t('edit.saveError'));
       btn.disabled = false;
-      btn.textContent = 'Guardar cambios';
+      btn.textContent = t('edit.save');
     }
   };
 }
@@ -1108,7 +1160,7 @@ function setupFavoriteButton(route) {
         btn.textContent = '★'; btn.dataset.fav = '1';
       }
     } catch (e) {
-      toast('No se pudo actualizar favoritos');
+      toast(t('toast.favError'));
     } finally {
       btn.disabled = false;
     }
@@ -1147,7 +1199,7 @@ async function setupPhotos(route) {
 
   function renderGallery() {
     if (!photos.length) {
-      gallery.innerHTML = '<p style="color:#888; font-size:13px; margin:0;">Todavía no hay fotos.</p>';
+      gallery.innerHTML = `<p style="color:#888; font-size:13px; margin:0;">${t('photos.none')}</p>`;
       return;
     }
     gallery.innerHTML = photos.map((p, i) => `
@@ -1162,18 +1214,18 @@ async function setupPhotos(route) {
   btnAdd.onclick = () => input.click();
   input.onchange = async () => {
     if (!input.files.length) return;
-    btnAdd.textContent = 'Subiendo…';
+    btnAdd.textContent = t('photos.uploading');
     try {
       const dataUrl = await resizeImageKeepAspect(input.files[0]);
       const saved = await DB.addPhoto(route.id, dataUrl);
       photos.push(saved);
       renderGallery();
-      toast('Foto añadida');
+      toast(t('toast.photoAdded'));
     } catch (e) {
       console.error(e);
-      toast('No se pudo subir la foto');
+      toast(t('photos.uploadError'));
     } finally {
-      btnAdd.textContent = '📷 Añadir foto';
+      btnAdd.textContent = t('detail.addPhoto');
       input.value = '';
     }
   };
@@ -1188,8 +1240,8 @@ function openPhotoLightbox(photo, routeId, photos, onChange) {
   overlay.innerHTML = `
     <img src="${photo.dataUrl}" style="max-width:94%; max-height:78%; border-radius:8px; object-fit:contain;">
     <div style="display:flex; gap:16px; margin-top:18px;">
-      <button id="lightboxDelete" class="btn secondary">🗑 Borrar</button>
-      <button id="lightboxClose" class="btn">Cerrar</button>
+      <button id="lightboxDelete" class="btn secondary">${t('photos.delete')}</button>
+      <button id="lightboxClose" class="btn">${t('photos.close')}</button>
     </div>
   `;
   document.body.appendChild(overlay);
@@ -1198,16 +1250,16 @@ function openPhotoLightbox(photo, routeId, photos, onChange) {
   overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
 
   overlay.querySelector('#lightboxDelete').onclick = async () => {
-    if (!confirm('¿Borrar esta foto?')) return;
+    if (!confirm(t('photos.deleteConfirm'))) return;
     try {
       await DB.deletePhoto(routeId, photo.id);
       const idx = photos.findIndex(p => p.id === photo.id);
       if (idx >= 0) photos.splice(idx, 1);
       onChange();
       overlay.remove();
-      toast('Foto borrada');
+      toast(t('toast.photoDeleted'));
     } catch (e) {
-      toast('No se pudo borrar (solo el autor puede)');
+      toast(t('photos.deleteError'));
     }
   };
 }
@@ -1220,7 +1272,7 @@ async function setupComments(route) {
   async function refresh() {
     const comments = await DB.listComments(route.id).catch(() => []);
     if (!comments.length) {
-      list.innerHTML = '<p style="font-size:12px; color:#888;">Sin comentarios todavía.</p>';
+      list.innerHTML = `<p style="font-size:12px; color:#888;">${t('comments.none')}</p>`;
       return;
     }
     list.innerHTML = comments.map(c => h`
@@ -1228,7 +1280,7 @@ async function setupComments(route) {
         <b style="font-size:12px;">${c.userName}</b>
         <span style="font-size:13px;"> ${c.text}</span>
         ${c.uid === (auth.currentUser && auth.currentUser.uid)
-          ? `<button data-del="${c.id}" style="background:none; border:none; color:#888; font-size:11px; cursor:pointer; margin-left:6px;">borrar</button>`
+          ? `<button data-del="${c.id}" style="background:none; border:none; color:#888; font-size:11px; cursor:pointer; margin-left:6px;">${t('comments.delete')}</button>`
           : ''}
       </div>
     `).join('');
@@ -1249,7 +1301,7 @@ async function setupComments(route) {
       input.value = '';
       refresh();
     } catch (e) {
-      toast(e.message || 'No se pudo enviar el comentario');
+      toast(e.message || t('comments.postError'));
     } finally {
       btn.disabled = false;
     }
@@ -1263,11 +1315,11 @@ function drawElevationChart(points) {
   if (!el) return;
 
   if (typeof Chart === 'undefined') {
-    el.parentElement.innerHTML = '<p style="color:#c0392b; font-size:13px;">No se pudo cargar el gráfico (fallo de red al cargar la librería). Recarga la página.</p>';
+    el.parentElement.innerHTML = `<p style="color:#c0392b; font-size:13px;">${t('chart.loadError')}</p>`;
     return;
   }
   if (!points || points.length < 2) {
-    el.parentElement.innerHTML = '<p style="color:#888; font-size:13px;">Esta ruta no tiene datos de altitud.</p>';
+    el.parentElement.innerHTML = `<p style="color:#888; font-size:13px;">${t('chart.noElevation')}</p>`;
     return;
   }
 
@@ -1289,7 +1341,7 @@ function drawElevationChart(points) {
       plugins: { legend: { display: false } },
       scales: {
         x: { title: { display: true, text: 'km' }, ticks: { maxTicksLimit: 6 } },
-        y: { title: { display: true, text: 'Altitud (m)' } }
+        y: { title: { display: true, text: 'm' } }
       }
     }
   });
@@ -1326,6 +1378,8 @@ function downloadGPX(route) {
 // ============================================================
 // ARRANQUE
 // ============================================================
+
+setupLangToggle();
 
 onAuthStateChanged(auth, (user) => {
   CURRENT_USER = user;

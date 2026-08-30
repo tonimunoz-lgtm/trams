@@ -38,7 +38,7 @@ const Parsers = (() => {
     // ESM/CJS para empaquetadores) — hasta confirmarlo con seguridad,
     // preferimos avisar claramente en vez de arriesgarnos a un fallo
     // silencioso. GPX ya cubre el caso principal de Wikiloc.
-    return Promise.reject(new Error('Los archivos .fit todavía no están soportados en Trams — sube el .gpx de la misma ruta mientras tanto.'));
+    return Promise.reject(new Error(window.I18n.t('parsers.fitNotSupported')));
   }
 
   async function parseFile(file) {
@@ -56,7 +56,7 @@ const Parsers = (() => {
       return parseFIT();
     }
 
-    throw new Error('Formato no soportado. Sube un archivo .gpx (por ahora, .fit está en camino).');
+    throw new Error(window.I18n.t('parsers.unsupportedFormat'));
   }
 
   return { parseGPX, parseFIT, parseFile };
