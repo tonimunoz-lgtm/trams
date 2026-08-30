@@ -642,11 +642,19 @@ async function geocodePlace(placeName) {
   return data;
 }
 
-async function searchOsmRoutes(lat, lon, radiusM, osmValue) {
+// Busca relaciones de ruta en Overpass. Dos modos:
+// - Por proximidad (name vacío): igual que antes, todo lo que caiga cerca
+//   del punto, con el margen de longitud para descartar rutas kilométricas.
+// - Por nombre (name presente): busca por el tag "name" de la ruta —
+//   necesario porque muchos tramos (p.ej. "Cinc Cims") tienen nombre
+//   propio pero no son un "lugar" que Nominatim pueda geocodificar. En
+//   este modo NO aplicamos el margen de longitud: es una búsqueda
+//   explícita, no una exploración por cercanía.
+async function searchOsmRoutes({ lat, lon, radiusM, osmValue, name }) {
   const resp = await fetch('/api/osm-search', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Lang': getLang() },
-    body: JSON.stringify({ lat, lon, radius: radiusM, osmValue })
+    body: JSON.stringify({ lat, lon, radius: radiusM, osmValue, name: name || undefined })
   });
   const data = await resp.json();
   if (!resp.ok) throw new Error(data.error || 'OpenStreetMap no respondió.');
@@ -659,6 +667,7 @@ async function searchOsmRoutes(lat, lon, radiusM, osmValue) {
   }
 
   const radiusNum = Number(radiusM) || 0;
+  const isNameSearch = !!name;
 
   return relations.map(rel => {
     const wayMembers = rel.members.filter(m => m.type === 'way');
@@ -675,7 +684,7 @@ async function searchOsmRoutes(lat, lon, radiusM, osmValue) {
     };
   }).filter(r => {
     if (r.points.length <= 5) return false; // descartamos trozos demasiado pequeños/rotos
-    if (!radiusNum) return true;
+    if (isNameSearch || !radiusNum) return true;
     const totalLength = Stats.cumulativeDistances(r.points).pop() || 0;
     // Descarta rutas que se van mucho más allá del radio pedido (ver nota arriba).
     return totalLength <= radiusNum * OSM_LENGTH_MARGIN;
@@ -694,6 +703,9 @@ async function renderImportOsm() {
     <label>${t('osm.searchNear')}</label>
     <input id="osmPlace" placeholder="${t('osm.placePlaceholder')}">
     <button class="btn secondary" id="btnUseMyLocation" style="width:100%; margin-bottom:10px;">${t('osm.useLocation')}</button>
+
+    <label>${t('osm.routeNameLabel')}</label>
+    <input id="osmRouteName" placeholder="${t('osm.routeNamePlaceholder')}">
 
     <label>${t('osm.type')}</label>
     <select id="osmType">
@@ -731,6 +743,7 @@ async function renderImportOsm() {
   document.getElementById('btnSearchOsm').onclick = async () => {
     const results = document.getElementById('osmResults');
     const placeText = document.getElementById('osmPlace').value.trim();
+    const routeNameText = document.getElementById('osmRouteName').value.trim();
     const radius = document.getElementById('osmRadius').value;
     const activityKey = document.getElementById('osmType').value;
 
@@ -738,12 +751,27 @@ async function renderImportOsm() {
 
     try {
       let center = searchCenter;
-      if (!center) {
-        if (!placeText) throw new Error(t('osm.needPlace'));
-        center = await geocodePlace(placeText);
+      if (!center && placeText) {
+        try {
+          center = await geocodePlace(placeText);
+        } catch (e) {
+          // Si además hay un nombre de tramo, seguimos sin centro — puede
+          // que lo escrito en "lugar" no fuera un lugar geocodificable
+          // (p.ej. "Cinc Cims" es el nombre de una ruta, no un sitio).
+          if (!routeNameText) throw e;
+        }
+      }
+      if (!center && !routeNameText) {
+        throw new Error(t('osm.needPlaceOrName'));
       }
 
-      const found = await searchOsmRoutes(center.lat, center.lon, radius, osmRouteTypes()[activityKey].osmValue);
+      const found = await searchOsmRoutes({
+        name: routeNameText || null,
+        lat: center ? center.lat : null,
+        lon: center ? center.lon : null,
+        radiusM: radius,
+        osmValue: osmRouteTypes()[activityKey].osmValue
+      });
 
       if (!found.length) {
         results.innerHTML = `<p style="color:#888; text-align:center;">${t('osm.noResults')}</p>`;
