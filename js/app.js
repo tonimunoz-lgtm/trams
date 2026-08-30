@@ -557,18 +557,19 @@ function setupQuickSync() {
 // un clic. Los senderos largos suelen venir troceados en varios pedazos
 // en OpenStreetMap — los cosemos en un trazado continuo aquí mismo.
 //
-// OJO — margen de longitud: Overpass encuentra una relación de ruta si
-// CUALQUIERA de sus nodos cae dentro del radio pedido, aunque la ruta
-// completa (p.ej. un GR de 200km) recorra medio país. Por eso antes
-// aparecían resultados kilométricamente enormes con un radio de 5-10km.
-// Como no cortamos el trazado (solo lo cosemos entero), aplicamos un
-// margen razonable: descartamos relaciones cuya longitud total supere
-// el radio pedido multiplicado por OSM_LENGTH_MARGIN. No es un filtro
-// exacto por "cerca del punto", pero evita que salgan rutas que se van
-// muchísimo más allá de lo buscado.
+// Dos modos de búsqueda, que NO se mezclan:
+//   - Por proximidad (sin nombre): el "radio de búsqueda" es justo eso,
+//     un radio real alrededor del punto (filtro "around" de Overpass).
+//     No filtramos por longitud del tramo — un GR largo puede aparecer
+//     igualmente si pasa cerca; para eso están los controles de orden
+//     (por longitud o por distancia al punto), no un descarte automático.
+//   - Por nombre: nunca se restringe por radio ni por ubicación (aunque
+//     el campo de lugar esté relleno) — solo se usa, si hay un centro
+//     disponible, para poder ORDENAR los resultados por distancia, no
+//     para filtrarlos. La cobertura geográfica de la búsqueda por nombre
+//     es Catalunya y alrededores (ver DEFAULT_BBOX en el servidor) por
+//     limitaciones del servidor público de Overpass, no un radio elegido.
 // ============================================================
-
-const OSM_LENGTH_MARGIN = 3;
 
 function haversineSimple(a, b) {
   const R = 6371000;
@@ -576,6 +577,19 @@ function haversineSimple(a, b) {
   const lat1 = a.lat * Math.PI / 180, lat2 = b.lat * Math.PI / 180;
   const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+// Distancia mínima de un trazado a un punto — muestreamos para no
+// recorrer miles de puntos en rutas muy largas.
+function minDistanceToCenter(points, center) {
+  if (!center || !points.length) return null;
+  const step = Math.max(1, Math.floor(points.length / 300));
+  let min = Infinity;
+  for (let i = 0; i < points.length; i += step) {
+    const d = haversineSimple(points[i], center);
+    if (d < min) min = d;
+  }
+  return min;
 }
 
 function stitchSegments(segments) {
@@ -642,14 +656,11 @@ async function geocodePlace(placeName) {
   return data;
 }
 
-// Busca relaciones de ruta en Overpass. Dos modos:
-// - Por proximidad (name vacío): igual que antes, todo lo que caiga cerca
-//   del punto, con el margen de longitud para descartar rutas kilométricas.
-// - Por nombre (name presente): busca por el tag "name" de la ruta —
-//   necesario porque muchos tramos (p.ej. "Cinc Cims") tienen nombre
-//   propio pero no son un "lugar" que Nominatim pueda geocodificar. En
-//   este modo NO aplicamos el margen de longitud: es una búsqueda
-//   explícita, no una exploración por cercanía.
+// Busca relaciones de ruta en Overpass. Ver nota arriba: el filtro por
+// radio SOLO se aplica en el servidor cuando no hay nombre; con nombre,
+// el servidor ignora lat/lon/radio para la búsqueda en sí (los mandamos
+// igualmente porque el cliente los usa para ORDENAR resultados por
+// distancia, ver renderImportOsm).
 async function searchOsmRoutes({ lat, lon, radiusM, osmValue, name }) {
   const resp = await fetch('/api/osm-search', {
     method: 'POST',
@@ -666,9 +677,6 @@ async function searchOsmRoutes({ lat, lon, radiusM, osmValue, name }) {
     else if (el.type === 'relation') relations.push(el);
   }
 
-  const radiusNum = Number(radiusM) || 0;
-  const isNameSearch = !!name;
-
   return relations.map(rel => {
     const wayMembers = rel.members.filter(m => m.type === 'way');
     const segments = wayMembers.map(m => {
@@ -682,13 +690,7 @@ async function searchOsmRoutes({ lat, lon, radiusM, osmValue, name }) {
       name: (rel.tags && rel.tags.name) || `#${rel.id}`,
       points
     };
-  }).filter(r => {
-    if (r.points.length <= 5) return false; // descartamos trozos demasiado pequeños/rotos
-    if (isNameSearch || !radiusNum) return true;
-    const totalLength = Stats.cumulativeDistances(r.points).pop() || 0;
-    // Descarta rutas que se van mucho más allá del radio pedido (ver nota arriba).
-    return totalLength <= radiusNum * OSM_LENGTH_MARGIN;
-  });
+  }).filter(r => r.points.length > 5); // descartamos trozos demasiado pequeños/rotos
 }
 
 async function renderImportOsm() {
@@ -706,6 +708,7 @@ async function renderImportOsm() {
 
     <label>${t('osm.routeNameLabel')}</label>
     <input id="osmRouteName" placeholder="${t('osm.routeNamePlaceholder')}">
+    <p style="font-size:11px; color:#888; margin:-4px 0 10px;">${t('osm.routeNameHint')}</p>
 
     <label>${t('osm.type')}</label>
     <select id="osmType">
@@ -719,14 +722,29 @@ async function renderImportOsm() {
       <option value="5000">5 km</option>
       <option value="10000" selected>10 km</option>
       <option value="20000">20 km</option>
+      <option value="50000">50 km</option>
     </select>
+    <p style="font-size:11px; color:#888; margin:-4px 0 10px;">${t('osm.radiusHint')}</p>
 
     <button class="btn" id="btnSearchOsm" style="width:100%; margin-top:6px;">${t('osm.searchBtn')}</button>
+
+    <div id="osmSortRow" style="display:none; margin-top:14px;">
+      <label>${t('osm.sortLabel')}</label>
+      <select id="osmSort">
+        <option value="none">${t('osm.sortNone')}</option>
+        <option value="lengthAsc">${t('osm.sortLengthAsc')}</option>
+        <option value="lengthDesc">${t('osm.sortLengthDesc')}</option>
+        <option value="distAsc" id="osmSortDistAsc">${t('osm.sortDistAsc')}</option>
+        <option value="distDesc" id="osmSortDistDesc">${t('osm.sortDistDesc')}</option>
+      </select>
+    </div>
 
     <div id="osmResults" style="margin-top:16px;"></div>
   `;
 
   let searchCenter = null;
+  let lastResults = [];   // { osmId, name, points, lengthM, proximityM }
+  let lastActivityKey = 'hiking';
 
   document.getElementById('btnUseMyLocation').onclick = () => {
     if (!('geolocation' in navigator)) { toast(t('osm.noGeo')); return; }
@@ -740,13 +758,94 @@ async function renderImportOsm() {
     );
   };
 
+  function sortResults(list, sortKey) {
+    const sorted = [...list];
+    if (sortKey === 'lengthAsc') sorted.sort((a, b) => a.lengthM - b.lengthM);
+    else if (sortKey === 'lengthDesc') sorted.sort((a, b) => b.lengthM - a.lengthM);
+    else if (sortKey === 'distAsc') sorted.sort((a, b) => (a.proximityM ?? Infinity) - (b.proximityM ?? Infinity));
+    else if (sortKey === 'distDesc') sorted.sort((a, b) => (b.proximityM ?? -Infinity) - (a.proximityM ?? -Infinity));
+    return sorted;
+  }
+
+  function renderResultsList(list) {
+    const results = document.getElementById('osmResults');
+
+    if (!list.length) {
+      results.innerHTML = `<p style="color:#888; text-align:center;">${t('osm.noResults')}</p>`;
+      return;
+    }
+
+    results.innerHTML = list.map((r, i) => {
+      const proximityLine = r.proximityM != null ? ` · ${t('osm.distanceToPoint', { km: Stats.fmtDistance(r.proximityM) })}` : '';
+      return h`
+        <div class="card">
+          <b>${r.name}</b>
+          <p style="font-size:12px; color:#888;">${Stats.fmtDistance(r.lengthM)} · ${t('osm.points', { n: r.points.length })}${proximityLine}</p>
+          <button class="btn secondary" data-import="${i}" style="width:100%;">${t('osm.importBtn')}</button>
+        </div>
+      `;
+    }).join('');
+
+    results.querySelectorAll('[data-import]').forEach(btn => {
+      btn.onclick = async () => {
+        const r = list[+btn.dataset.import];
+        btn.disabled = true;
+        try {
+          // 1. Simplificamos el trazado ANTES de pedir altitud, para no
+          // tener que consultar miles de puntos a un servicio público y
+          // gratuito — con esto ya queda con la densidad final de
+          // almacenamiento (igual tolerancia que downsampleForStorage).
+          const simplifiedPoints = Stats.downsampleForStorage(r.points);
+
+          btn.textContent = t('osm.fetchingElevation');
+          const { points: pointsWithEle, ok: elevationOk } = await fetchElevations(simplifiedPoints);
+
+          btn.textContent = t('osm.importing');
+          const summary = Stats.computeSummary(pointsWithEle);
+          if (!summary) throw new Error(t('osm.invalidTrack'));
+
+          const storedPoints = summary.points.map(p => ({
+            lat: +p.lat.toFixed(6), lon: +p.lon.toFixed(6),
+            ele: p.ele != null ? Math.round(p.ele) : null
+          }));
+
+          const saved = await DB.saveRoute({
+            name: r.name,
+            activityType: lastActivityKey,
+            description: t('osm.importedDesc'),
+            distance: summary.totalDistance,
+            elevGain: summary.elevGain,
+            elevLoss: summary.elevLoss,
+            duration: null,
+            source: 'openstreetmap',
+            points: storedPoints
+          });
+
+          toast(elevationOk ? t('toast.imported') : t('osm.elevationError'));
+          navigate(`#/route/${saved.id}`);
+        } catch (e) {
+          toast(e.message || t('toast.importError'));
+          btn.disabled = false;
+          btn.textContent = t('osm.importBtn');
+        }
+      };
+    });
+  }
+
+  document.getElementById('osmSort').onchange = (e) => {
+    renderResultsList(sortResults(lastResults, e.target.value));
+  };
+
   document.getElementById('btnSearchOsm').onclick = async () => {
     const results = document.getElementById('osmResults');
+    const sortRow = document.getElementById('osmSortRow');
     const placeText = document.getElementById('osmPlace').value.trim();
     const routeNameText = document.getElementById('osmRouteName').value.trim();
     const radius = document.getElementById('osmRadius').value;
     const activityKey = document.getElementById('osmType').value;
+    lastActivityKey = activityKey;
 
+    sortRow.style.display = 'none';
     results.innerHTML = '<div class="spinner"></div>';
 
     try {
@@ -773,66 +872,19 @@ async function renderImportOsm() {
         osmValue: osmRouteTypes()[activityKey].osmValue
       });
 
-      if (!found.length) {
-        results.innerHTML = `<p style="color:#888; text-align:center;">${t('osm.noResults')}</p>`;
-        return;
-      }
+      lastResults = found.map(r => ({
+        ...r,
+        lengthM: Stats.cumulativeDistances(r.points).pop() || 0,
+        proximityM: minDistanceToCenter(r.points, center)
+      }));
 
-      results.innerHTML = found.map((r, i) => {
-        const dist = Stats.cumulativeDistances(r.points).pop();
-        return h`
-          <div class="card">
-            <b>${r.name}</b>
-            <p style="font-size:12px; color:#888;">${Stats.fmtDistance(dist)} · ${t('osm.points', { n: r.points.length })}</p>
-            <button class="btn secondary" data-import="${i}" style="width:100%;">${t('osm.importBtn')}</button>
-          </div>
-        `;
-      }).join('');
+      const hasCenter = !!center;
+      document.getElementById('osmSortDistAsc').style.display = hasCenter ? '' : 'none';
+      document.getElementById('osmSortDistDesc').style.display = hasCenter ? '' : 'none';
+      document.getElementById('osmSort').value = 'none';
+      sortRow.style.display = lastResults.length ? 'block' : 'none';
 
-      results.querySelectorAll('[data-import]').forEach(btn => {
-        btn.onclick = async () => {
-          const r = found[+btn.dataset.import];
-          btn.disabled = true;
-          try {
-            // 1. Simplificamos el trazado ANTES de pedir altitud, para no
-            // tener que consultar miles de puntos a un servicio público y
-            // gratuito — con esto ya queda con la densidad final de
-            // almacenamiento (igual tolerancia que downsampleForStorage).
-            const simplifiedPoints = Stats.downsampleForStorage(r.points);
-
-            btn.textContent = t('osm.fetchingElevation');
-            const { points: pointsWithEle, ok: elevationOk } = await fetchElevations(simplifiedPoints);
-
-            btn.textContent = t('osm.importing');
-            const summary = Stats.computeSummary(pointsWithEle);
-            if (!summary) throw new Error(t('osm.invalidTrack'));
-
-            const storedPoints = summary.points.map(p => ({
-              lat: +p.lat.toFixed(6), lon: +p.lon.toFixed(6),
-              ele: p.ele != null ? Math.round(p.ele) : null
-            }));
-
-            const saved = await DB.saveRoute({
-              name: r.name,
-              activityType: activityKey,
-              description: t('osm.importedDesc'),
-              distance: summary.totalDistance,
-              elevGain: summary.elevGain,
-              elevLoss: summary.elevLoss,
-              duration: null,
-              source: 'openstreetmap',
-              points: storedPoints
-            });
-
-            toast(elevationOk ? t('toast.imported') : t('osm.elevationError'));
-            navigate(`#/route/${saved.id}`);
-          } catch (e) {
-            toast(e.message || t('toast.importError'));
-            btn.disabled = false;
-            btn.textContent = t('osm.importBtn');
-          }
-        };
-      });
+      renderResultsList(lastResults);
 
     } catch (e) {
       console.error(e);
