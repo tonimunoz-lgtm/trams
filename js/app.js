@@ -600,6 +600,37 @@ function osmRouteTypes() {
   };
 }
 
+// Pide la altitud real de cada punto a nuestro puente con Open-Elevation
+// (ver api/elevation.js) — OSM no trae altitud en los nodos de un camino.
+// Si el servicio falla, no bloqueamos la importación: seguimos con los
+// puntos tal cual (sin altitud), y quien llame a esta función decide
+// cómo avisar de que se ha importado sin desnivel.
+async function fetchElevations(points) {
+  if (!points.length) return { points, ok: true };
+  try {
+    const resp = await fetch('/api/elevation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Lang': getLang() },
+      body: JSON.stringify({ points: points.map(p => ({ lat: p.lat, lon: p.lon })) })
+    });
+    const data = await resp.json();
+    if (!resp.ok || !Array.isArray(data.elevations)) {
+      return { points, ok: false };
+    }
+    const withEle = points.map((p, i) => ({
+      ...p,
+      ele: (typeof data.elevations[i] === 'number') ? data.elevations[i] : p.ele
+    }));
+    // "ok" solo si el servicio ha devuelto al menos alguna altitud real —
+    // si todo ha vuelto null (servicio caído, etc.), lo tratamos como fallo.
+    const ok = data.elevations.some(e => typeof e === 'number');
+    return { points: withEle, ok };
+  } catch (e) {
+    console.warn('No se pudo obtener la altitud de OpenStreetMap', e);
+    return { points, ok: false };
+  }
+}
+
 async function geocodePlace(placeName) {
   const resp = await fetch('/api/osm-search', {
     method: 'POST',
@@ -734,14 +765,25 @@ async function renderImportOsm() {
         btn.onclick = async () => {
           const r = found[+btn.dataset.import];
           btn.disabled = true;
-          btn.textContent = t('osm.importing');
           try {
-            const summary = Stats.computeSummary(r.points);
+            // 1. Simplificamos el trazado ANTES de pedir altitud, para no
+            // tener que consultar miles de puntos a un servicio público y
+            // gratuito — con esto ya queda con la densidad final de
+            // almacenamiento (igual tolerancia que downsampleForStorage).
+            const simplifiedPoints = Stats.downsampleForStorage(r.points);
+
+            btn.textContent = t('osm.fetchingElevation');
+            const { points: pointsWithEle, ok: elevationOk } = await fetchElevations(simplifiedPoints);
+
+            btn.textContent = t('osm.importing');
+            const summary = Stats.computeSummary(pointsWithEle);
             if (!summary) throw new Error(t('osm.invalidTrack'));
-            const storedPoints = Stats.downsampleForStorage(summary.points).map(p => ({
+
+            const storedPoints = summary.points.map(p => ({
               lat: +p.lat.toFixed(6), lon: +p.lon.toFixed(6),
               ele: p.ele != null ? Math.round(p.ele) : null
             }));
+
             const saved = await DB.saveRoute({
               name: r.name,
               activityType: activityKey,
@@ -753,7 +795,8 @@ async function renderImportOsm() {
               source: 'openstreetmap',
               points: storedPoints
             });
-            toast(t('toast.imported'));
+
+            toast(elevationOk ? t('toast.imported') : t('osm.elevationError'));
             navigate(`#/route/${saved.id}`);
           } catch (e) {
             toast(e.message || t('toast.importError'));
@@ -1318,7 +1361,7 @@ function drawElevationChart(points) {
     el.parentElement.innerHTML = `<p style="color:#c0392b; font-size:13px;">${t('chart.loadError')}</p>`;
     return;
   }
-  if (!points || points.length < 2) {
+  if (!points || points.length < 2 || !points.some(p => p.ele != null)) {
     el.parentElement.innerHTML = `<p style="color:#888; font-size:13px;">${t('chart.noElevation')}</p>`;
     return;
   }
