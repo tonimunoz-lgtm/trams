@@ -1,3 +1,0 @@
-requests==2.32.3
-firebase-admin==6.5.0
-fitparse==1.2.0
