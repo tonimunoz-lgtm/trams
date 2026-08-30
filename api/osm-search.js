@@ -9,6 +9,23 @@
 //
 // Los mensajes de error se devuelven en català o castellà según la
 // cabecera X-Lang que manda el cliente (por defecto català).
+//
+// Búsqueda por nombre (body.name): muchos tramos tienen nombre propio
+// (p.ej. "Cinc Cims") pero no son un "lugar" geocodificable por Nominatim
+// — por eso el modo normal de "buscar cerca de un sitio" no los encuentra
+// si escribes el nombre del tramo ahí. En este modo filtramos por el tag
+// "name" de la relación en vez de (o además de) la posición:
+//   - Si hay lat/lon, buscamos dentro de un radio más generoso que el
+//     pedido (el nombre ya filtra mucho, el radio aquí solo desambigua
+//     entre tramos con nombres parecidos en zonas distintas).
+//   - Si no hay lat/lon, restringimos a un cuadro amplio alrededor de
+//     Catalunya (para no lanzar una búsqueda sin acotar a medio planeta,
+//     que en el servidor público de Overpass acabaría en timeout).
+
+const NAME_SEARCH_RADIUS_MULTIPLIER = 5;
+const NAME_SEARCH_MAX_RADIUS = 300000; // 300 km, tope para no disparar una consulta enorme
+const NAME_SEARCH_MIN_RADIUS = 5000;
+const DEFAULT_BBOX = '40.3,-1.5,43.5,4.5'; // Catalunya i voltants (Aragó, Franja, sud de França)
 
 const MSGS = {
   ca: {
@@ -34,6 +51,13 @@ const MSGS = {
 function pickLang(req) {
   const l = String(req.headers['x-lang'] || '').toLowerCase();
   return l === 'es' ? 'es' : 'ca';
+}
+
+// Escapamos caracteres especiales de regex — el operador "~" de Overpass
+// hace match por expresión regular (PCRE), y el nombre lo escribe la
+// persona usuaria libremente.
+function escapeRegex(str) {
+  return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 export default async function handler(req, res) {
@@ -67,15 +91,39 @@ export default async function handler(req, res) {
     return;
   }
 
-  // Modo 2 (por defecto): buscar rutas/senderos cerca de un punto (Overpass)
-  const { lat, lon, radius, osmValue } = body || {};
-  if (lat == null || lon == null || !radius || !osmValue) {
+  // Modo 2 (por defecto): buscar rutas/senderos por proximidad y/o por
+  // nombre (Overpass).
+  const { lat, lon, radius, osmValue, name } = body || {};
+  const hasCenter = lat != null && lon != null;
+
+  if (!osmValue) {
+    res.status(400).json({ error: M.missingParams });
+    return;
+  }
+  if (!name && (!hasCenter || !radius)) {
+    // Sin nombre, necesitamos sí o sí un punto y un radio (búsqueda por
+    // cercanía, comportamiento de siempre).
     res.status(400).json({ error: M.missingParams });
     return;
   }
 
+  let areaClause;
+  if (name) {
+    if (hasCenter) {
+      const baseRadius = Math.max(Number(radius) || NAME_SEARCH_MIN_RADIUS, NAME_SEARCH_MIN_RADIUS);
+      const searchRadius = Math.min(baseRadius * NAME_SEARCH_RADIUS_MULTIPLIER, NAME_SEARCH_MAX_RADIUS);
+      areaClause = `(around:${searchRadius},${lat},${lon})`;
+    } else {
+      areaClause = `(${DEFAULT_BBOX})`;
+    }
+  } else {
+    areaClause = `(around:${radius},${lat},${lon})`;
+  }
+
+  const nameFilter = name ? `["name"~"${escapeRegex(name)}",i]` : '';
+
   const query = `[out:json][timeout:25];
-relation["route"="${osmValue}"](around:${radius},${lat},${lon});
+relation["route"="${osmValue}"]${nameFilter}${areaClause};
 out body;
 >;
 out skel qt;`;
