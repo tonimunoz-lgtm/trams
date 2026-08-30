@@ -108,3 +108,12 @@ textarea { min-height: 70px; resize: vertical; }
 .btn.secondary {
   background: var(--white); color: var(--green-dark); border: 1.5px solid var(--green);
 }
+
+/* Botó de canvi d'idioma (català / castellà) — fix a la cantonada,
+   per sobre de qualsevol pantalla, incloent el login. */
+.lang-toggle {
+  position: fixed; top: 10px; right: 10px; z-index: 2500;
+  background: var(--white); border: 1.5px solid var(--green); color: var(--green-dark);
+  border-radius: 20px; padding: 6px 12px; font-size: 12px; font-weight: 700;
+  cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.12);
+}
